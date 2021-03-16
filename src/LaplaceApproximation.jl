@@ -5,33 +5,58 @@ using ForwardDiff
 using LinearAlgebra
 using Distributions
 
-export LaplaceApprox,
-    fitlaplace,
-    logapprox,
-    approx,
-    mode,
-    normalizer
+export MarginalLogDensity,
+    AbstractMarginalizer,
+    LaplaceApprox,
+    Cubature,
+    dimension,
+    imarginal,
+    ijoint,
+    nmarginal,
+    njoint
 
-struct LaplaceApprox
-    logf
-    mode
-    hessian
-    normalizer
+abstract type AbstractMarginalizer end
+
+struct LaplaceApprox <: AbstractMarginalizer end
+struct Cubature <: AbstractMarginalizer end
+
+
+struct MarginalLogDensity{TI<:Integer, TM<:AbstractMarginalizer,
+        TV<:AbstractVector{TI}, TF}
+    logdensity::TF
+    dimension::TI
+    imarginal::TV
+    ijoint::TV
+    method::TM
 end
-Distributions.mode(la::LaplaceApprox) = la.mode
-normalizer(la::LaplaceApprox) = la.normalizer
 
-function fitlaplace(logf::Function, x0::AbstractVector)
-    n = length(x0)
-    xfit = optimize(x -> -logf(x), x0)
-    xhat = xfit.minimizer
-    H = ForwardDiff.hessian(logf, xhat)
-    f(x) = exp(logf(x))
-    z = f(xhat) * sqrt((2π)^length(xhat) / det(H))
-    return LaplaceApprox(logf, xhat, H, z)
+function MarginalLogDensity(logdensity::Function, dimension::TI,
+        imarginal::AbstractVector{TI}, method=LaplaceApprox()) where {TI<:Integer}
+    ijoint = setdiff(1:dimension, imarginal)
+    return MarginalLogDensity(logdensity, dimension, imarginal, ijoint, method)
 end
 
-logapprox(la::LaplaceApprox, x::AbstractVector) = la.logf(x) - log(normalizer(la))
-approx(la::LaplaceApprox, x::AbstractVector) = exp(logapprox(la, x))
+dimension(mld::MarginalLogDensity) = mld.dimension
+imarginal(mld::MarginalLogDensity) = mld.imarginal
+ijoint(mld::MarginalLogDensity) = mld.ijoint
+nmarginal(mld::MarginalLogDensity) = length(mld.imarginal)
+njoint(mld::MarginalLogDensity) = length(mld.ijoint)
+
+
+function (mld::MarginalLogDensity)(θmarg::AbstractVector{T1}, θjoint::AbstractVector{T2}) where {T1, T2}
+    θ = Vector{promote_type(T1, T2)}(undef, dimension(mld))
+    θ[imarginal(mld)] .= θmarg
+    θ[ijoint(mld)] .= θjoint
+    return mld.logdensity(θ)
+end
+
+function (mld::MarginalLogDensity)(θjoint::AbstractVector{T}) where T
+    objective = θmarginal -> -mld(θmarginal, θjoint)
+    opt = optimize(objective, ones(nmarginal(mld)))
+    H = ForwardDiff.hessian(objective, opt.minimizer)
+    logz = -opt.minimum + 0.5 * log(2π) * logdet(H)
+    return logz
+end
+
 
 end # module

@@ -1,4 +1,4 @@
-module LaplaceApproximation
+module MarginalLogDensities
 
 using Optim
 using ForwardDiff

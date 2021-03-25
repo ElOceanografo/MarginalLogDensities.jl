@@ -3,6 +3,7 @@ module LaplaceApproximation
 using Optim
 using ForwardDiff
 using LinearAlgebra
+using HCubature
 using Distributions
 
 export MarginalLogDensity,
@@ -18,7 +19,11 @@ export MarginalLogDensity,
 abstract type AbstractMarginalizer end
 
 struct LaplaceApprox <: AbstractMarginalizer end
-struct Cubature <: AbstractMarginalizer end
+
+struct Cubature{T} <: AbstractMarginalizer
+    upper::AbstractVector{T}
+    lower::AbstractVector{T}
+end
 
 
 struct MarginalLogDensity{TI<:Integer, TM<:AbstractMarginalizer,
@@ -51,12 +56,23 @@ function (mld::MarginalLogDensity)(θmarg::AbstractVector{T1}, θjoint::Abstract
 end
 
 function (mld::MarginalLogDensity)(θjoint::AbstractVector{T}) where T
-    objective = θmarginal -> -mld(θmarginal, θjoint)
-    opt = optimize(objective, ones(nmarginal(mld)))
-    H = ForwardDiff.hessian(objective, opt.minimizer)
-    logz = -opt.minimum + 0.5 * log(2π) * logdet(H)
+    logz = _marginalize(mld, θjoint, mld.method)
     return logz
 end
 
+function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
+        method::LaplaceApprox) where T
+    f = θmarginal -> -mld(θmarginal, θjoint)
+    N = nmarginal(mld)
+    opt = optimize(f, zeros(N))
+    H = -ForwardDiff.hessian(f, opt.minimizer)
+    logz = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H))
+end
+
+function _marginalize(mld::MarginalLogDensity, θjoint, method::Cubature)
+    f = θmarginal -> exp(mld(θmarginal, θjoint))
+    int, err = hcubature(f, method.lower, method.upper)
+    return log(int)
+end
 
 end # module

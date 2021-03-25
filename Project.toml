@@ -1,4 +1,4 @@
-name = "LaplaceApproximation"
+name = "MarginalLogDensities"
 uuid = "f0c3360a-fb8d-11e9-1194-5521fd7ee392"
 authors = ["Sam Urmy <oceanographerschoice@gmail.com>"]
 version = "0.1.0"

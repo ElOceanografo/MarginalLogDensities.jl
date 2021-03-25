@@ -1,4 +1,4 @@
-using LaplaceApproximation
+using MarginalLogDensities
 using Test
 using Distributions
 using Optim

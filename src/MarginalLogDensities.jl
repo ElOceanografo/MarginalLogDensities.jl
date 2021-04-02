@@ -65,8 +65,9 @@ function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
     f = θmarginal -> -mld(θmarginal, θjoint)
     N = nmarginal(mld)
     opt = optimize(f, zeros(N))
-    H = -ForwardDiff.hessian(f, opt.minimizer)
+    H = ForwardDiff.hessian(f, opt.minimizer)
     logz = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H))
+    return logz
 end
 
 function _marginalize(mld::MarginalLogDensity, θjoint, method::Cubature)

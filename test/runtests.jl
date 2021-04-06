@@ -8,7 +8,8 @@ using HCubature
 using Random
 
 N = 3
-logdensity(x) = logpdf(MvNormal(zeros(N), 1.5), x)
+d = MvNormal(zeros(N), 1.5)
+logdensity(x) = logpdf(d, x)
 im = [1, 3]
 ij = [2]
 mld = MarginalLogDensity(logdensity, N, im)
@@ -47,4 +48,7 @@ end
         -100*ones(2), 100*ones(2))
     @test log(int) ≈ mld_laplace(x[ij])
     @test log(int) ≈ mld_cubature(x[ij])
+    # marginalized density should be higher than joint density at same point
+    @test mld_laplace(x[ij]) >= mld_laplace(x[im], x[ij])
+    @test mld_cubature(x[ij]) >= mld_cubature(x[im], x[ij])
 end

@@ -56,8 +56,8 @@ function (mld::MarginalLogDensity)(θmarg::AbstractVector{T1}, θjoint::Abstract
 end
 
 function (mld::MarginalLogDensity)(θjoint::AbstractVector{T}) where T
-    logz = _marginalize(mld, θjoint, mld.method)
-    return logz
+    integral = _marginalize(mld, θjoint, mld.method)
+    return integral
 end
 
 function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
@@ -66,8 +66,8 @@ function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
     N = nmarginal(mld)
     opt = optimize(f, zeros(N))
     H = ForwardDiff.hessian(f, opt.minimizer)
-    logz = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H))
-    return logz
+    integral = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H))
+    return integral
 end
 
 function _marginalize(mld::MarginalLogDensity, θjoint, method::Cubature)

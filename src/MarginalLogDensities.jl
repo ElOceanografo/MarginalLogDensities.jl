@@ -64,7 +64,7 @@ function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
         method::LaplaceApprox) where T
     f = θmarginal -> -mld(θmarginal, θjoint)
     N = nmarginal(mld)
-    opt = optimize(f, zeros(N))
+    opt = optimize(f, zeros(N), LBFGS())
     H = ForwardDiff.hessian(f, opt.minimizer)
     integral = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H))
     return integral

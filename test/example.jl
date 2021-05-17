@@ -4,7 +4,7 @@ using StatsPlots
 using Random
 using Optim
 
-Random.seed!(123)
+Random.seed!(1234)
 ncategories = 8
 categories = 1:ncategories
 μ0 = 5.0
@@ -36,9 +36,10 @@ loglik(θtrue)
 
 
 mll = MarginalLogDensity(loglik, nθ, collect(3:10))
-    # Cubature(-10ones(nθ-3), 10ones(nθ-3)))
 mll(aa, [μ0, log(σ0), b, log(σ)])
-@profiler for i in 1:100 mll([μ0, log(σ0), b, log(σ)]) end
+@profiler for i in 1:500
+    mll([μ0, log(σ0), b, log(σ)])
+end
 mll(randn(4))
 
 opt = optimize(θjoint -> -mll(θjoint), ones(4))
@@ -50,6 +51,13 @@ exp(logσ0_opt)      # 5.0
 b_opt               # 4.5
 exp(logσ_opt)       # 0.5
 
+θ_opt = [μ0_opt, exp(logσ0_opt), b_opt, exp(logσ_opt)]
+
 using FiniteDiff, LinearAlgebra
 H = FiniteDiff.finite_difference_hessian(θjoint -> -mll(θjoint), opt.minimizer)
 std_errors = 1 ./ sqrt.(diag(H))
+
+θ_names = ["μ₀", "σ₀", "b", "σ"]
+scatter(θ_names, θ_opt, yerror=2*std_errors, label="Estimate",
+    xlabel="Parameter", ylabel="Value")
+scatter!(θ_names, [μ0, σ0, b, σ], label="Truth")

@@ -3,6 +3,7 @@ using Distributions
 using StatsPlots
 using Random
 using Optim
+using BenchmarkTools
 
 Random.seed!(1234)
 ncategories = 8
@@ -35,14 +36,14 @@ nθ = length(θtrue)
 loglik(θtrue)
 
 
-mll = MarginalLogDensity(loglik, nθ, collect(3:10))
-mll(aa, [μ0, log(σ0), b, log(σ)])
-@profiler for i in 1:500
-    mll([μ0, log(σ0), b, log(σ)])
+mld = MarginalLogDensity(loglik, nθ, collect(3:10))
+@btime mld(aa, [μ0, log(σ0), b, log(σ)])
+@btime mld([μ0, log(σ0), b, log(σ)])
+@profiler for i in 1:1000
+    mld([μ0, log(σ0), b, log(σ)])
 end
-mll(randn(4))
 
-opt = optimize(θjoint -> -mll(θjoint), ones(4))
+opt = optimize(θjoint -> -mld(θjoint), ones(4))
 μ0_opt, logσ0_opt, b_opt, logσ_opt = opt.minimizer
 
                     # should be:
@@ -54,7 +55,7 @@ exp(logσ_opt)       # 0.5
 θ_opt = [μ0_opt, exp(logσ0_opt), b_opt, exp(logσ_opt)]
 
 using FiniteDiff, LinearAlgebra
-H = FiniteDiff.finite_difference_hessian(θjoint -> -mll(θjoint), opt.minimizer)
+H = FiniteDiff.finite_difference_hessian(θjoint -> -mld(θjoint), opt.minimizer)
 std_errors = 1 ./ sqrt.(diag(H))
 
 θ_names = ["μ₀", "σ₀", "b", "σ"]

@@ -2,6 +2,7 @@ module MarginalLogDensities
 
 using Optim
 using ForwardDiff
+using ReverseDiff
 using LinearAlgebra
 using SuiteSparse
 using SparseArrays
@@ -126,11 +127,12 @@ end
 function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
         method::LaplaceApprox) where T
     f(θmarginal) = -mld(θmarginal, θjoint)
+    # g!(G, θmarginal) = ForwardDiff.gradient!(G, f, θmarginal)
     N = nmarginal(mld)
-    opt = optimize(f, zeros(N), LBFGS())
+    opt = optimize(f, zeros(N), LBFGS(), autodiff=:forward)
     # H = ForwardDiff.hessian(f, opt.minimizer)
     Hv = HesVec(f, opt.minimizer)
-    H = hcat([sparse(Hv * i) for i in eachcol(I(N))]...)
+    H = reduce(hcat, sparse(Hv * i) for i in eachcol(I(N)))
     integral = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H))
     return integral
 end

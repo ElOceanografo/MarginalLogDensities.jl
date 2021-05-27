@@ -15,7 +15,8 @@ ij = [2]
 mld = MarginalLogDensity(logdensity, N, im)
 
 @testset "Constructors" begin
-    mld1 = MarginalLogDensity(logdensity, N, im, ij, LaplaceApprox())
+    hp = HessianConfig(zeros(N, N), zeros(N), zeros(N, N), zeros(N, N), zeros(N), zeros(N))
+    mld1 = MarginalLogDensity(logdensity, N, im, ij, LaplaceApprox(), hp)
     mld2 = MarginalLogDensity(logdensity, N, im)
     mld3 = MarginalLogDensity(logdensity, N, im, LaplaceApprox())
     mld4 = MarginalLogDensity(logdensity, N, im,

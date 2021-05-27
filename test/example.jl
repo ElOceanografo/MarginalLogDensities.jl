@@ -34,12 +34,12 @@ end
 θtrue = [μ0; log(σ0); aa; b; log(σ)]
 nθ = length(θtrue)
 loglik(θtrue)
-
+θmarg = θtrue[[1, 2, 11, 12]]
 
 mld = MarginalLogDensity(loglik, nθ, collect(3:10))
-@btime mld(aa, [μ0, log(σ0), b, log(σ)])
-@btime mld([μ0, log(σ0), b, log(σ)])
-@profiler for i in 1:1000
+@btime mld($aa, $θmarg) # 5.3 μs
+@btime mld($θmarg) # 115 μs
+@profiler for i in 1:5000
     mld([μ0, log(σ0), b, log(σ)])
 end
 

@@ -7,9 +7,12 @@ using SuiteSparse
 using SparseArrays
 using HCubature
 using Distributions
+using SparsityDetection
+# using Symbolics
 using SparseDiffTools
 
 export MarginalLogDensity,
+    HessianConfig,
     AbstractMarginalizer,
     LaplaceApprox,
     Cubature,
@@ -47,18 +50,84 @@ as `mld(u, θ)`, where `u` is a length-`m` vector of the marginalized variables.
 case, the return value is the same as the full conditional `logdensity` with `u` and `θ`
 """
 struct MarginalLogDensity{TI<:Integer, TM<:AbstractMarginalizer,
-        TV<:AbstractVector{TI}, TF}
+        TV<:AbstractVector{TI}, TF, THP}
     logdensity::TF
     n::TI
     imarginal::TV
     ijoint::TV
     method::TM
+    hessconfig::THP
+end
+
+# Was using this for testing/troubleshooting, will probably delete later
+# """
+#     `num_hessian_sparsity(f, x, [δ=1.0])`
+#
+# Calculate the sparsity pattern of the Hessian matrix of function `f`. This is a brute-force
+# approach, but more robust than the one in SparsityDetection
+# """
+# function num_hessian_sparsity(f, x, δ=1.0)
+#     N = length(x)
+#     g(x) = ForwardDiff.gradient(f, x)
+#     y = g(x)
+#     ii = Int[]
+#     jj = Int[]
+#     vv = Float64[]
+#     for j in 1:N
+#         x[j] += δ
+#         yj = g(x)
+#         di = findall(.! (yj .≈ y))
+#         for i in di
+#             push!(jj, j)
+#             push!(ii, i)
+#             push!(vv, 1.0)
+#         end
+#         x[j] -= δ
+#     end
+#     return sparse(ii, jj, vv)
+# end
+
+struct HessianConfig{THS, THC, TD, TG}
+    Hsparsity::THS
+    Hcolors::THC
+    D::TD
+    Hcomp_buffer::TD
+    G::TG
+    δG::TG
+end
+
+function HessianConfig(logdensity, imarginal, ijoint)
+    x = ones(length(imarginal) + length(ijoint))
+    Hsparsity = hessian_sparsity(logdensity, x)[imarginal, imarginal]
+    Hcolors = matrix_colors(tril(Hsparsity))
+    D = hcat([float.(i .== Hcolors) for i in 1:maximum(Hcolors)]...)
+    Hcomp_buffer = similar(D)
+    G = zeros(length(imarginal))
+    δG = zeros(length(imarginal))
+    return HessianConfig(Hsparsity, Hcolors, D, Hcomp_buffer, G, δG)
+end
+
+function sparse_hessian!(f, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
+    g!(G, θ) = ForwardDiff.gradient!(G, f, θ)
+    for j in 1:size(hessconfig.Hcolors, 2)
+        g!(hessconfig.G, θ)
+        g!(hessconfig.δG, θ + δ * @view hessconfig.D[:, j])
+        hessconfig.Hcomp_buffer[:, j] .= (hessconfig.δG .- hessconfig.G) ./ δ
+    end
+    ii, jj, vv = findnz(hessconfig.Hsparsity)
+    H = sparse(ii, jj, zeros(length(vv)))
+    for (i, j) in zip(ii, jj)
+        H[i, j] = hessconfig.Hcomp_buffer[i, hessconfig.Hcolors[j]]
+    end
+    return H
 end
 
 function MarginalLogDensity(logdensity::Function, n::TI,
         imarginal::AbstractVector{TI}, method=LaplaceApprox()) where {TI<:Integer}
     ijoint = setdiff(1:n, imarginal)
-    return MarginalLogDensity(logdensity, n, imarginal, ijoint, method)
+    hessconfig = HessianConfig(logdensity, imarginal, ijoint)
+    mld  = MarginalLogDensity(logdensity, n, imarginal, ijoint, method, hessconfig)
+    return mld
 end
 
 dimension(mld::MarginalLogDensity) = mld.n
@@ -137,9 +206,7 @@ function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
     f(θmarginal) = -mld(θmarginal, θjoint)
     N = nmarginal(mld)
     opt = optimize(f, zeros(N), LBFGS(), autodiff=:forward)
-    # H = ForwardDiff.hessian(f, opt.minimizer)
-    Hv = HesVec(f, opt.minimizer)
-    H = reduce(hcat, sparse(Hv * i) for i in eachcol(I(N)))
+    H = sparse_hessian!(f, opt.minimizer, mld.hessconfig)
     integral = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H))
     return integral
 end

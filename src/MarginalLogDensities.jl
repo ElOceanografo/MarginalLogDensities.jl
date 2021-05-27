@@ -2,7 +2,6 @@ module MarginalLogDensities
 
 using Optim
 using ForwardDiff
-using ReverseDiff
 using LinearAlgebra
 using SuiteSparse
 using SparseArrays
@@ -18,7 +17,9 @@ export MarginalLogDensity,
     imarginal,
     ijoint,
     nmarginal,
-    njoint
+    njoint,
+    merge_parameters,
+    split_parameters
 
 abstract type AbstractMarginalizer end
 
@@ -66,11 +67,18 @@ ijoint(mld::MarginalLogDensity) = mld.ijoint
 nmarginal(mld::MarginalLogDensity) = length(mld.imarginal)
 njoint(mld::MarginalLogDensity) = length(mld.ijoint)
 
+function merge_parameters(θmarg::AbstractVector{T1}, θjoint::AbstractVector{T2}, imarg, ijoint) where {T1,T2}
+    N = length(θmarg) + length(θjoint)
+    θ = Vector{promote_type(T1, T2)}(undef, N)
+    θ[imarg] .= θmarg
+    θ[ijoint] .= θjoint
+    return θ
+end
+
+split_parameters(θ, imarg, ijoint) = (θ[imarg], θ[ijoint])
 
 function (mld::MarginalLogDensity)(θmarg::AbstractVector{T1}, θjoint::AbstractVector{T2}) where {T1, T2}
-    θ = Vector{promote_type(T1, T2)}(undef, dimension(mld))
-    θ[imarginal(mld)] .= θmarg
-    θ[ijoint(mld)] .= θjoint
+    θ = merge_parameters(θmarg, θjoint, imarginal(mld), ijoint(mld))
     return mld.logdensity(θ)
 end
 
@@ -127,7 +135,6 @@ end
 function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
         method::LaplaceApprox) where T
     f(θmarginal) = -mld(θmarginal, θjoint)
-    # g!(G, θmarginal) = ForwardDiff.gradient!(G, f, θmarginal)
     N = nmarginal(mld)
     opt = optimize(f, zeros(N), LBFGS(), autodiff=:forward)
     # H = ForwardDiff.hessian(f, opt.minimizer)

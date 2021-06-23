@@ -87,6 +87,8 @@ end
 #     return sparse(ii, jj, vv)
 # end
 
+
+
 struct HessianConfig{THS, THC, TD, TG}
     Hsparsity::THS
     Hcolors::THC
@@ -96,10 +98,17 @@ struct HessianConfig{THS, THC, TD, TG}
     δG::TG
 end
 
-function HessianConfig(logdensity, imarginal, ijoint)
+function HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity=false)
     x = ones(length(imarginal) + length(ijoint))
-    Hsparsity = hessian_sparsity(logdensity, x)[imarginal, imarginal]
-    Hcolors = matrix_colors(tril(Hsparsity))
+    if forwarddiff_sparsity
+        println("Detecting Hessian sparsity via ForwardDiff...")
+        H = ForwardDiff.hessian(logdensity, x)
+        Hsparsity = sparse(H)[imarginal, imarginal] .!= 0
+    else
+        println("Detecting Hessian sparsity via SparsityDetection...")
+        Hsparsity = hessian_sparsity(logdensity, x)[imarginal, imarginal]
+    end
+    Hcolors = matrix_colors(Hsparsity)
     D = hcat([float.(i .== Hcolors) for i in 1:maximum(Hcolors)]...)
     Hcomp_buffer = similar(D)
     G = zeros(length(imarginal))
@@ -123,9 +132,9 @@ function sparse_hessian!(f, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64))
 end
 
 function MarginalLogDensity(logdensity::Function, n::TI,
-        imarginal::AbstractVector{TI}, method=LaplaceApprox()) where {TI<:Integer}
+        imarginal::AbstractVector{TI}, method=LaplaceApprox(), forwarddiff_sparsity=false) where {TI<:Integer}
     ijoint = setdiff(1:n, imarginal)
-    hessconfig = HessianConfig(logdensity, imarginal, ijoint)
+    hessconfig = HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity)
     mld  = MarginalLogDensity(logdensity, n, imarginal, ijoint, method, hessconfig)
     return mld
 end
@@ -151,8 +160,8 @@ function (mld::MarginalLogDensity)(θmarg::AbstractVector{T1}, θjoint::Abstract
     return mld.logdensity(θ)
 end
 
-function (mld::MarginalLogDensity)(θjoint::AbstractVector{T}) where T
-    integral = _marginalize(mld, θjoint, mld.method)
+function (mld::MarginalLogDensity)(θjoint::AbstractVector{T}, verbose=false) where T
+    integral = _marginalize(mld, θjoint, mld.method, verbose)
     return integral
 end
 
@@ -202,16 +211,25 @@ end
 ############################################################################################
 
 function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
-        method::LaplaceApprox) where T
+        method::LaplaceApprox, verbose) where T
     f(θmarginal) = -mld(θmarginal, θjoint)
+    g!(G, θmarginal) = ForwardDiff.gradient!(G, f, θmarginal)
+    h!(H, θmarginal) = H .= sparse_hessian!(f, θmarginal, mld.hessconfig)
+
     N = nmarginal(mld)
-    opt = optimize(f, zeros(N), LBFGS(), autodiff=:forward)
+    verbose && println("Optimizing...")
+    opt = optimize(f, g!, h!, ones(N), Newton(), # autodiff=:forward,
+        Optim.Options(iterations=10_000, show_trace=verbose, show_every=10))
+    # opt = optimize(f, zeros(N), LBFGS(), autodiff=:forward,
+    #     Optim.Options(iterations=10_000, show_trace=verbose, show_every=10))
+    verbose && println("Calculating Hessian at mode...")
     H = sparse_hessian!(f, opt.minimizer, mld.hessconfig)
+    verbose && println("Laplace approximating...")
     integral = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H))
     return integral
 end
 
-function _marginalize(mld::MarginalLogDensity, θjoint, method::Cubature)
+function _marginalize(mld::MarginalLogDensity, θjoint, method::Cubature, verbose)
     f = θmarginal -> exp(mld(θmarginal, θjoint))
     int, err = hcubature(f, method.lower, method.upper)
     return log(int)

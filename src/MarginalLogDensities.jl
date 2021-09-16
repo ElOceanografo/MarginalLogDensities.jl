@@ -89,9 +89,10 @@ end
 
 
 
-struct HessianConfig{THS, THC, TD, TG}
+struct HessianConfig{THS, THC, TI, TD, TG}
     Hsparsity::THS
     Hcolors::THC
+    ncolors::TI
     D::TD
     Hcomp_buffer::TD
     G::TG
@@ -113,12 +114,11 @@ function HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity=false
     Hcomp_buffer = similar(D)
     G = zeros(length(imarginal))
     δG = zeros(length(imarginal))
-    return HessianConfig(Hsparsity, Hcolors, D, Hcomp_buffer, G, δG)
+    return HessianConfig(Hsparsity, Hcolors, size(Hcolors, 2), D, Hcomp_buffer, G, δG)
 end
 
-function sparse_hessian!(f, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
-    g!(G, θ) = ForwardDiff.gradient!(G, f, θ)
-    for j in 1:size(hessconfig.Hcolors, 2)
+function sparse_hessian!(f, g!, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
+    for j in 1:hessconfig.ncolors
         g!(hessconfig.G, θ)
         g!(hessconfig.δG, θ + δ * @view hessconfig.D[:, j])
         hessconfig.Hcomp_buffer[:, j] .= (hessconfig.δG .- hessconfig.G) ./ δ
@@ -129,6 +129,11 @@ function sparse_hessian!(f, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64))
         H[i, j] = hessconfig.Hcomp_buffer[i, hessconfig.Hcolors[j]]
     end
     return H
+end
+
+function sparse_hessian!(f, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
+    g!(G, θ) = ForwardDiff.gradient!(G, f, θ)
+    return sparse_hessian!(f, g!, θ, hessconfig, δ)
 end
 
 function MarginalLogDensity(logdensity::Function, n::TI,
@@ -212,18 +217,16 @@ end
 
 function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
         method::LaplaceApprox, verbose) where T
-    f(θmarginal) = -mld(θmarginal, θjoint)
-    g!(G, θmarginal) = ForwardDiff.gradient!(G, f, θmarginal)
-    h!(H, θmarginal) = H .= sparse_hessian!(f, θmarginal, mld.hessconfig)
-
     N = nmarginal(mld)
+    f(θmarginal) = -mld(θmarginal, θjoint)
+    gconfig = ForwardDiff.GradientConfig(f, ones(N))
+    g!(G, θmarginal) = ForwardDiff.gradient!(G, f, θmarginal, gconfig)
+
     verbose && println("Optimizing...")
-    opt = optimize(f, g!, h!, ones(N), Newton(), # autodiff=:forward,
+    opt = optimize(f, g!, zeros(N), LBFGS(),# autodiff=:forward,
         Optim.Options(iterations=10_000, show_trace=verbose, show_every=10))
-    # opt = optimize(f, zeros(N), LBFGS(), autodiff=:forward,
-    #     Optim.Options(iterations=10_000, show_trace=verbose, show_every=10))
     verbose && println("Calculating Hessian at mode...")
-    H = sparse_hessian!(f, opt.minimizer, mld.hessconfig)
+    H = sparse_hessian!(f, g!, opt.minimizer, mld.hessconfig)
     verbose && println("Laplace approximating...")
     integral = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H))
     return integral

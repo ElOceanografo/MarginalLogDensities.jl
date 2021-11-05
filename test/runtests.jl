@@ -8,15 +8,16 @@ using HCubature
 using Random
 
 N = 3
-d = MvNormal(zeros(N), 1.5)
+σ = 1.5
+d = MvNormal(zeros(N), σ*I)
 logdensity(x) = logpdf(d, x)
 im = [1, 3]
 ij = [2]
-mld = MarginalLogDensity(logdensity, N, im)
+dmarginal = MvNormal(zeros(length(ij)), σ*I)
 
 @testset "Constructors" begin
     for forwarddiff_sparsity in [false, true]
-        hp = HessianConfig(zeros(N, N), zeros(N), zeros(N, N), zeros(N, N), zeros(N), zeros(N))
+        hp = HessianConfig(zeros(N, N), zeros(N), N, zeros(N, N), zeros(N, N), zeros(N), zeros(N))
         mld1 = MarginalLogDensity(logdensity, N, im, ij, LaplaceApprox(), hp)
         mld2 = MarginalLogDensity(logdensity, N, im)
         mld3 = MarginalLogDensity(logdensity, N, im, LaplaceApprox(), forwarddiff_sparsity)
@@ -35,8 +36,16 @@ mld = MarginalLogDensity(logdensity, N, im)
     end
 end
 
+# @testset "Sparse Hessians" begin
+#     f(x) = -logdensity(x)
+#     hconf = HessianConfig(f, im, ij)    
+#     H = zeros(length(im), length(im))
+
+
+# end
+
 @testset "Approximations" begin
-    x = 1:3
+    x = 1.0:3.0
     mld_laplace = MarginalLogDensity(logdensity, N, im, LaplaceApprox())
     mld_cubature = MarginalLogDensity(logdensity, N, im,
         Cubature(-100ones(2), 100ones(2)))
@@ -44,8 +53,8 @@ end
     @test mld_laplace(x[im], x[ij]) == logdensity(x)
     @test mld_cubature(x[im], x[ij]) == logdensity(x)
     # analytical: against 1D Gaussian
-    @test mld_laplace(x[ij]) ≈ logpdf(Normal(0, 1.5), 2)
-    @test mld_cubature(x[ij]) ≈ logpdf(Normal(0, 1.5), 2)
+    @test mld_laplace(x[ij]) ≈ logpdf(dmarginal, x[ij])
+    @test mld_cubature(x[ij]) ≈ logpdf(dmarginal, x[ij])
     # test against numerical integral
     int, err = hcubature(x -> exp(logdensity([x[1], 2, x[2]])),
         -100*ones(2), 100*ones(2))

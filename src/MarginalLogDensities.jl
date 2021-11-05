@@ -10,6 +10,8 @@ using Distributions
 using SparsityDetection
 # using Symbolics
 using SparseDiffTools
+using NLSolversBase
+
 
 export MarginalLogDensity,
     HessianConfig,
@@ -59,6 +61,13 @@ struct MarginalLogDensity{TI<:Integer, TM<:AbstractMarginalizer,
     hessconfig::THP
 end
 
+function MarginalLogDensity(logdensity, n, im, method=LaplaceApprox(), forwarddiff_sparsity=false)
+    ij = setdiff(1:n, im)
+    hessconfig = HessianConfig(logdensity, im, ij, forwarddiff_sparsity)
+    return MarginalLogDensity(logdensity, n, im, ij, method, hessconfig)
+end
+
+
 # Was using this for testing/troubleshooting, will probably delete later
 # """
 #     `num_hessian_sparsity(f, x, [δ=1.0])`
@@ -89,7 +98,7 @@ end
 
 
 
-struct HessianConfig{THS, THC, TI, TD, TG}
+struct HessianConfig{THS, THC, TI<:Integer, TD, TG}
     Hsparsity::THS
     Hcolors::THC
     ncolors::TI
@@ -117,27 +126,29 @@ function HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity=false
     return HessianConfig(Hsparsity, Hcolors, size(Hcolors, 2), D, Hcomp_buffer, G, δG)
 end
 
-function sparse_hessian!(f, g!, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
-    for j in 1:hessconfig.ncolors
+function sparse_hessian!(H, f, g!, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
+    nc = hessconfig.ncolors
+    for j in one(nc):nc
         g!(hessconfig.G, θ)
         g!(hessconfig.δG, θ + δ * @view hessconfig.D[:, j])
         hessconfig.Hcomp_buffer[:, j] .= (hessconfig.δG .- hessconfig.G) ./ δ
     end
     ii, jj, vv = findnz(hessconfig.Hsparsity)
-    H = sparse(ii, jj, zeros(length(vv)))
     for (i, j) in zip(ii, jj)
         H[i, j] = hessconfig.Hcomp_buffer[i, hessconfig.Hcolors[j]]
     end
+end
+
+function sparse_hessian(f, g!, θ,  hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
+    i, j, v = findnz(hessconfig.Hsparsity)
+    H = sparse(i, j, zeros(eltype(θ), length(v)))
+    sparse_hessian!(H, f, g!, θ, hessconfig, δ)
     return H
 end
 
-function sparse_hessian!(f, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
-    g!(G, θ) = ForwardDiff.gradient!(G, f, θ)
-    return sparse_hessian!(f, g!, θ, hessconfig, δ)
-end
 
 function MarginalLogDensity(logdensity::Function, n::TI,
-        imarginal::AbstractVector{TI}, method=LaplaceApprox(), forwarddiff_sparsity=false) where {TI<:Integer}
+        imarginal::AbstractVector{TI}; method=LaplaceApprox(), forwarddiff_sparsity=false) where {TI<:Integer}
     ijoint = setdiff(1:n, imarginal)
     hessconfig = HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity)
     mld  = MarginalLogDensity(logdensity, n, imarginal, ijoint, method, hessconfig)
@@ -218,17 +229,20 @@ end
 function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
         method::LaplaceApprox, verbose) where T
     N = nmarginal(mld)
-    f(θmarginal) = -mld(θmarginal, θjoint)
-    gconfig = ForwardDiff.GradientConfig(f, ones(N))
-    g!(G, θmarginal) = ForwardDiff.gradient!(G, f, θmarginal, gconfig)
+    θmarginal0 = ones(T, N)
+    f = (θmarginal) -> -mld(θmarginal, θjoint)
+    gconfig = ForwardDiff.GradientConfig(f, θmarginal0)
+    g! = (G, x) -> ForwardDiff.gradient!(G, f, x, gconfig)
+    h! = (H, x) -> sparse_hessian!(H, f, g!, x, mld.hessconfig)
+    H0 = sparse_hessian(f, g!, θmarginal0, mld.hessconfig)
+    td = TwiceDifferentiable(f, g!, h!, θmarginal0, zero(T), zeros(T, N), H0)
 
     verbose && println("Optimizing...")
-    opt = optimize(f, g!, zeros(N), LBFGS(),# autodiff=:forward,
-        Optim.Options(iterations=10_000, show_trace=verbose, show_every=10))
+    opt = optimize(td, θmarginal0)
     verbose && println("Calculating Hessian at mode...")
-    H = sparse_hessian!(f, g!, opt.minimizer, mld.hessconfig)
+    h!(H0, opt.minimizer)
     verbose && println("Laplace approximating...")
-    integral = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H))
+    integral = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H0))
     return integral
 end
 

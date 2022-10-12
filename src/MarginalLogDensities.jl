@@ -63,7 +63,18 @@ end
 
 function MarginalLogDensity(logdensity, n, im, method=LaplaceApprox(), forwarddiff_sparsity=false)
     ij = setdiff(1:n, im)
-    hessconfig = HessianConfig(logdensity, im, ij, forwarddiff_sparsity)
+    u = zeros(n)
+    # hessconfig = HessianConfig(logdensity, im, ij, forwarddiff_sparsity)
+    if forwarddiff_sparsity
+        println("Detecting Hessian sparsity via ForwardDiff...")
+        H = ForwardDiff.hessian(logdensity, u)
+        Hsparsity = sparse(H) .!= 0
+    else
+        println("Detecting Hessian sparsity via SparsityDetection...")
+        Hsparsity = hessian_sparsity(logdensity, u)
+    end
+    Hcolors = matrix_colors(Hsparsity)
+    hessconfig = ForwardColorHesCache(logdensity, u, Hcolors, Hsparsity)
     return MarginalLogDensity(logdensity, n, im, ij, method, hessconfig)
 end
 
@@ -98,62 +109,62 @@ end
 
 
 
-struct HessianConfig{THS, THC, TI<:Integer, TD, TG}
-    Hsparsity::THS
-    Hcolors::THC
-    ncolors::TI
-    D::TD
-    Hcomp_buffer::TD
-    G::TG
-    δG::TG
-end
+# struct HessianConfig{THS, THC, TI<:Integer, TD, TG}
+#     Hsparsity::THS
+#     Hcolors::THC
+#     ncolors::TI
+#     D::TD
+#     Hcomp_buffer::TD
+#     G::TG
+#     δG::TG
+# end
 
-function HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity=false)
-    x = ones(length(imarginal) + length(ijoint))
-    if forwarddiff_sparsity
-        println("Detecting Hessian sparsity via ForwardDiff...")
-        H = ForwardDiff.hessian(logdensity, x)
-        Hsparsity = sparse(H)[imarginal, imarginal] .!= 0
-    else
-        println("Detecting Hessian sparsity via SparsityDetection...")
-        Hsparsity = hessian_sparsity(logdensity, x)[imarginal, imarginal]
-    end
-    Hcolors = matrix_colors(Hsparsity)
-    D = hcat([float.(i .== Hcolors) for i in 1:maximum(Hcolors)]...)
-    Hcomp_buffer = similar(D)
-    G = zeros(length(imarginal))
-    δG = zeros(length(imarginal))
-    return HessianConfig(Hsparsity, Hcolors, size(Hcolors, 2), D, Hcomp_buffer, G, δG)
-end
+# function HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity=false)
+#     x = ones(length(imarginal) + length(ijoint))
+#     if forwarddiff_sparsity
+#         println("Detecting Hessian sparsity via ForwardDiff...")
+#         H = ForwardDiff.hessian(logdensity, x)
+#         Hsparsity = sparse(H)[imarginal, imarginal] .!= 0
+#     else
+#         println("Detecting Hessian sparsity via SparsityDetection...")
+#         Hsparsity = hessian_sparsity(logdensity, x)[imarginal, imarginal]
+#     end
+#     Hcolors = matrix_colors(Hsparsity)
+#     D = hcat([float.(i .== Hcolors) for i in 1:maximum(Hcolors)]...)
+#     Hcomp_buffer = similar(D)
+#     G = zeros(length(imarginal))
+#     δG = zeros(length(imarginal))
+#     return HessianConfig(Hsparsity, Hcolors, size(Hcolors, 2), D, Hcomp_buffer, G, δG)
+# end
 
-function sparse_hessian!(H, f, g!, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
-    nc = hessconfig.ncolors
-    for j in one(nc):nc
-        g!(hessconfig.G, θ)
-        g!(hessconfig.δG, θ + δ * @view hessconfig.D[:, j])
-        hessconfig.Hcomp_buffer[:, j] .= (hessconfig.δG .- hessconfig.G) ./ δ
-    end
-    ii, jj, vv = findnz(hessconfig.Hsparsity)
-    for (i, j) in zip(ii, jj)
-        H[i, j] = hessconfig.Hcomp_buffer[i, hessconfig.Hcolors[j]]
-    end
-end
+# function sparse_hessian!(H, f, g!, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
+#     nc = hessconfig.ncolors
+#     for j in one(nc):nc
+#         g!(hessconfig.G, θ)
+#         g!(hessconfig.δG, θ + δ * @view hessconfig.D[:, j])
+#         hessconfig.Hcomp_buffer[:, j] .= (hessconfig.δG .- hessconfig.G) ./ δ
+#     end
+#     ii, jj, vv = findnz(hessconfig.Hsparsity)
+#     for (i, j) in zip(ii, jj)
+#         H[i, j] = hessconfig.Hcomp_buffer[i, hessconfig.Hcolors[j]]
+#     end
+# end
 
-function sparse_hessian(f, g!, θ,  hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
-    i, j, v = findnz(hessconfig.Hsparsity)
-    H = sparse(i, j, zeros(eltype(θ), length(v)))
-    sparse_hessian!(H, f, g!, θ, hessconfig, δ)
-    return H
-end
+# function sparse_hessian(f, g!, θ,  hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
+#     i, j, v = findnz(hessconfig.Hsparsity)
+#     H = sparse(i, j, zeros(eltype(θ), length(v)))
+#     sparse_hessian!(H, f, g!, θ, hessconfig, δ)
+#     return H
+# end
 
 
-function MarginalLogDensity(logdensity::Function, n::TI,
-        imarginal::AbstractVector{TI}; method=LaplaceApprox(), forwarddiff_sparsity=false) where {TI<:Integer}
-    ijoint = setdiff(1:n, imarginal)
-    hessconfig = HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity)
-    mld  = MarginalLogDensity(logdensity, n, imarginal, ijoint, method, hessconfig)
-    return mld
-end
+# function MarginalLogDensity(logdensity::Function, n::TI,
+#         imarginal::AbstractVector{TI}; method=LaplaceApprox(), forwarddiff_sparsity=false) where {TI<:Integer}
+#     ijoint = setdiff(1:n, imarginal)
+#     hessconfig = HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity)
+#     mld  = MarginalLogDensity(logdensity, n, imarginal, ijoint, method, hessconfig)
+#     return mld
+# end
 
 dimension(mld::MarginalLogDensity) = mld.n
 imarginal(mld::MarginalLogDensity) = mld.imarginal
@@ -233,8 +244,12 @@ function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
     f = (θmarginal) -> -mld(θmarginal, θjoint)
     gconfig = ForwardDiff.GradientConfig(f, θmarginal0)
     g! = (G, x) -> ForwardDiff.gradient!(G, f, x, gconfig)
-    h! = (H, x) -> sparse_hessian!(H, f, g!, x, mld.hessconfig)
-    H0 = sparse_hessian(f, g!, θmarginal0, mld.hessconfig)
+    hsparsity = mld.hessconfig.sparsity[imarginal(mld), imarginal(mld)]
+    hcolors = matrix_colors(hsparsity)
+    hescache = ForwardColorHesCache(f, θmarginal0, hcolors, hsparsity, g!)
+    # h! = (H, x) -> sparse_hessian!(H, f, g!, x, mld.hessconfig)
+    h! = (H, x) -> numauto_color_hessian!(H, f, x, hescache)
+    H0 = numauto_color_hessian(f, θmarginal0, hescache)
     td = TwiceDifferentiable(f, g!, h!, θmarginal0, zero(T), zeros(T, N), H0)
 
     verbose && println("Optimizing...")

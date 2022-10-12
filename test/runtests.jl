@@ -6,6 +6,7 @@ using ForwardDiff
 using LinearAlgebra
 using HCubature
 using Random
+using SparseDiffTools
 
 N = 3
 σ = 1.5
@@ -17,7 +18,8 @@ dmarginal = MvNormal(zeros(length(ij)), σ*I)
 
 @testset "Constructors" begin
     for forwarddiff_sparsity in [false, true]
-        hp = HessianConfig(zeros(N, N), zeros(N), N, zeros(N, N), zeros(N, N), zeros(N), zeros(N))
+        # hp = HessianConfig(zeros(N, N), zeros(N), N, zeros(N, N), zeros(N, N), zeros(N), zeros(N))
+        hp = ForwardColorHesCache(logdensity, zeros(N))
         mld1 = MarginalLogDensity(logdensity, N, im, ij, LaplaceApprox(), hp)
         mld2 = MarginalLogDensity(logdensity, N, im)
         mld3 = MarginalLogDensity(logdensity, N, im, LaplaceApprox(), forwarddiff_sparsity)

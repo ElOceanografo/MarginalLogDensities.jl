@@ -15,26 +15,26 @@ im = [1, 3]
 ij = [2]
 dmarginal = MvNormal(zeros(length(ij)), σ*I)
 
-@testset "Constructors" begin
-    for forwarddiff_sparsity in [false, true]
-        hp = HessianConfig(zeros(N, N), zeros(N), N, zeros(N, N), zeros(N, N), zeros(N), zeros(N))
-        mld1 = MarginalLogDensity(logdensity, N, im, ij, LaplaceApprox(), hp)
-        mld2 = MarginalLogDensity(logdensity, N, im)
-        mld3 = MarginalLogDensity(logdensity, N, im, LaplaceApprox(), forwarddiff_sparsity)
-        mld4 = MarginalLogDensity(logdensity, N, im,
-            Cubature(-100ones(N), 100ones(N)))
+# @testset "Constructors" begin
+#     for forwarddiff_sparsity in [false, true]
+#         hp = HessianConfig(zeros(N, N), zeros(N), N, zeros(N, N), zeros(N, N), zeros(N), zeros(N))
+#         mld1 = MarginalLogDensity(logdensity, N, im, ij, LaplaceApprox(), hp)
+#         mld2 = MarginalLogDensity(logdensity, N, im)
+#         mld3 = MarginalLogDensity(logdensity, N, im, LaplaceApprox(), forwarddiff_sparsity)
+#         mld4 = MarginalLogDensity(logdensity, N, im,
+#             Cubature(-100ones(N), 100ones(N)))
 
-        for mld in [mld2, mld3, mld4]
-            @test dimension(mld) == dimension(mld1) == N
-            @test imarginal(mld) == imarginal(mld1) == im
-            @test ijoint(mld) == ijoint(mld1) == ij
-            @test nmarginal(mld) == nmarginal(mld1) == length(imarginal(mld))
-            @test njoint(mld) == njoint(mld1) == length(ijoint(mld))
-            @test njoint(mld) + nmarginal(mld) == dimension(mld)
-            @test isempty(setdiff(1:N, union(im, ij)))
-        end
-    end
-end
+#         for mld in [mld2, mld3, mld4]
+#             @test dimension(mld) == dimension(mld1) == N
+#             @test imarginal(mld) == imarginal(mld1) == im
+#             @test ijoint(mld) == ijoint(mld1) == ij
+#             @test nmarginal(mld) == nmarginal(mld1) == length(imarginal(mld))
+#             @test njoint(mld) == njoint(mld1) == length(ijoint(mld))
+#             @test njoint(mld) + nmarginal(mld) == dimension(mld)
+#             @test isempty(setdiff(1:N, union(im, ij)))
+#         end
+#     end
+# end
 
 # @testset "Sparse Hessians" begin
 #     f(x) = -logdensity(x)

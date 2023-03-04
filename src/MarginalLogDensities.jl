@@ -193,49 +193,6 @@ function (mld::MarginalLogDensity)(θjoint::AbstractVector{T}, verbose=false) wh
 end
 
 ############################################################################################
-# This section implements a `logabsdet` method for sparse LU decompositions, so we can
-# calculate the Laplace approximation for sparse Hessians.  This is an import from the
-# future; the method will be in the next Julia release but it's copy-pasted in here for now
-# so that this package will work.
-
-# compute the sign/parity of a permutation
-function _signperm(p)
-    n = length(p)
-    result = 0
-    todo = trues(n)
-    while any(todo)
-        k = findfirst(todo)
-        todo[k] = false
-        result += 1 # increment element count
-        j = p[k]
-        while j != k
-            result += 1 # increment element count
-            todo[j] = false
-            j = p[j]
-        end
-        result += 1 # increment cycle count
-    end
-    return ifelse(isodd(result), -1, 1)
-end
-
-function LinearAlgebra.logabsdet(F::SuiteSparse.UMFPACK.UmfpackLU{T, TI}) where {T<:Union{Float64,ComplexF64}, TI<:Integer} # return log(abs(det)) and sign(det)
-    n = LinearAlgebra.checksquare(F)
-    issuccess(F) || return log(zero(real(T))), zero(T)
-    U = F.U
-    Rs = F.Rs
-    p = F.p
-    q = F.q
-    s = _signperm(p)*_signperm(q)*one(real(T))
-    P = one(T)
-    abs_det = zero(real(T))
-    @inbounds for i in 1:n
-        dg_ii = U[i, i] / Rs[i]
-        P *= sign(dg_ii)
-        abs_det += log(abs(dg_ii))
-    end
-    return abs_det, s * P
-end
-############################################################################################
 
 function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
         method::LaplaceApprox, verbose) where T

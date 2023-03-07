@@ -1,6 +1,6 @@
 module MarginalLogDensities
-
-using Optim
+using Optimization
+using OptimizationOptimJL
 using ForwardDiff
 using LinearAlgebra
 using SuiteSparse
@@ -14,7 +14,6 @@ using NLSolversBase
 
 
 export MarginalLogDensity,
-    HessianConfig,
     AbstractMarginalizer,
     LaplaceApprox,
     Cubature,
@@ -40,44 +39,105 @@ end
 
 Construct a callable object which wraps the function `logdensity` and
 integrates over a subset of its arguments.
-* `logdensity` : function taking a vector of `n` parameters and returning a positive
+* `logdensity` : function with signature `(u, p)` returning a positive
 log-probability (e.g. a log-pdf, log-likelihood, or log-posterior).
 * `imarginal` : Vector of indices indicating which arguments to `logdensity` to marginalize
 * `method` : How to perform the marginalization.  Defaults to `LaplaceApprox()`; `Cubature()`
 is also available.
 
-If `length(imarginal) == m`, then the constructed `MarginalLogDensity` object it `mld`
+If `length(imarginal) == m`, then the constructed `MarginalLogDensity` object  `mld`
 can be called as `mld(θ)`, where `θ` is a vector with length `n-m`.  It can also be called
 as `mld(u, θ)`, where `u` is a length-`m` vector of the marginalized variables.  In this
 case, the return value is the same as the full conditional `logdensity` with `u` and `θ`
 """
 struct MarginalLogDensity{TI<:Integer, TM<:AbstractMarginalizer,
-        TV<:AbstractVector{TI}, TF, THP}
+        TV<:AbstractVector{TI}, TF, TF1, TU}
     logdensity::TF
-    n::TI
-    imarginal::TV
-    ijoint::TV
+    u::TU
+    iv::TV
+    iw::TV
+    F::TF1
     method::TM
-    hessconfig::THP
 end
 
-function MarginalLogDensity(logdensity, n, im, method=LaplaceApprox(), forwarddiff_sparsity=false)
-    ij = setdiff(1:n, im)
-    u = zeros(n)
-    # hessconfig = HessianConfig(logdensity, im, ij, forwarddiff_sparsity)
+function get_hessian_sparsity(f, u, forwarddiff_sparsity)
     if forwarddiff_sparsity
         println("Detecting Hessian sparsity via ForwardDiff...")
-        H = ForwardDiff.hessian(logdensity, u)
+        H = ForwardDiff.hessian(f, u)
         Hsparsity = sparse(H) .!= 0
     else
         println("Detecting Hessian sparsity via SparsityDetection...")
-        Hsparsity = hessian_sparsity(logdensity, u)
+        Hsparsity = hessian_sparsity(f, u)
     end
     Hcolors = matrix_colors(Hsparsity)
-    hessconfig = ForwardColorHesCache(logdensity, u, Hcolors, Hsparsity)
-    return MarginalLogDensity(logdensity, n, im, ij, method, hessconfig)
+    return Hsparsity, Hcolors
 end
 
+function MarginalLogDensity(logdensity, u, iw, method=LaplaceApprox(), forwarddiff_sparsity=false)
+    n = length(u)
+    iv = setdiff(1:n, iw)
+    # Hcolors, Hsparsity = get_hessian_sparsity(logdensity, u, forwarddiff_sparsity)
+    f(w, p2) = -logdensity(merge_parameters(p2.v, w, iv, iw), p2.p)
+    F = OptimizationFunction(f, Optimization.AutoForwardDiff())
+    return MarginalLogDensity(logdensity, u, iv, iw, F, method)
+end
+
+function Base.show(io::IO, mld::MarginalLogDensity)
+    str = "MarginalLogDensity of function $(repr(mld.logdensity))\nIntegrating $(length(mld.iw))/$(length(mld.u)) variables via $(repr(mld.method))"
+    write(io, str)
+end
+
+function (mld::MarginalLogDensity)(v::AbstractVector{T}, p; verbose=false) where T
+    return _marginalize(mld, v, p, mld.method, verbose)
+end
+
+dimension(mld::MarginalLogDensity) = length(mld.u)
+imarginal(mld::MarginalLogDensity) = mld.iw
+ijoint(mld::MarginalLogDensity) = mld.iv
+nmarginal(mld::MarginalLogDensity) = length(mld.iw)
+njoint(mld::MarginalLogDensity) = length(mld.iv)
+
+"""
+Splice together the estimated (fixed) parameters `v` and marginalized (random) parameters
+`w` into the single parameter vector `u`, based on their indices `iv` and `iw`.
+"""
+function merge_parameters(v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw) where {T1,T2}
+    N = length(v) + length(w)
+    u = Vector{promote_type(T1, T2)}(undef, N)
+    u[iv] .= v
+    u[iw] .= w
+    return u
+end
+
+"""
+Split the vector of all parameters `u` into its estimated (fixed) components `v` and
+marginalized (random) components `w`, based on their indices `iv` and `iw`.
+components
+"""
+split_parameters(u, iv, iw) = (u[iv], u[iw])
+
+function _marginalize(mld, v, p, method::LaplaceApprox, verbose)
+    w0 = mld.u[mld.iw]
+    nw = length(w0)
+    p2 = (;p, v)
+    verbose && println("Finding mode...")
+    prob = OptimizationProblem(mld.F, w0, p2)
+    sol = solve(prob, BFGS())
+    wopt = sol.u
+    verbose && println("Calculating hessian...")
+    H = -ForwardDiff.hessian(w -> mld.F(w, p2), wopt)
+    mld.u[mld.iw] = wopt
+    verbose && println("Integrating...")
+    integral = -sol.objective + log((2π)^(nw/2)) - log(det(H)^0.5)
+    verbose && println("Done!")
+    return integral#, sol 
+end
+
+function _marginalize(mld, v, p, method::Cubature, verbose)
+    p2 = (;p, v)
+    integral, err = hcubature(w -> exp(-mld.F(w, p2)), method.lower, method.upper)
+    return log(integral)
+end
 
 # Was using this for testing/troubleshooting, will probably delete later
 # """
@@ -108,120 +168,3 @@ end
 # end
 
 
-
-# struct HessianConfig{THS, THC, TI<:Integer, TD, TG}
-#     Hsparsity::THS
-#     Hcolors::THC
-#     ncolors::TI
-#     D::TD
-#     Hcomp_buffer::TD
-#     G::TG
-#     δG::TG
-# end
-
-# function HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity=false)
-#     x = ones(length(imarginal) + length(ijoint))
-#     if forwarddiff_sparsity
-#         println("Detecting Hessian sparsity via ForwardDiff...")
-#         H = ForwardDiff.hessian(logdensity, x)
-#         Hsparsity = sparse(H)[imarginal, imarginal] .!= 0
-#     else
-#         println("Detecting Hessian sparsity via SparsityDetection...")
-#         Hsparsity = hessian_sparsity(logdensity, x)[imarginal, imarginal]
-#     end
-#     Hcolors = matrix_colors(Hsparsity)
-#     D = hcat([float.(i .== Hcolors) for i in 1:maximum(Hcolors)]...)
-#     Hcomp_buffer = similar(D)
-#     G = zeros(length(imarginal))
-#     δG = zeros(length(imarginal))
-#     return HessianConfig(Hsparsity, Hcolors, size(Hcolors, 2), D, Hcomp_buffer, G, δG)
-# end
-
-# function sparse_hessian!(H, f, g!, θ, hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
-#     nc = hessconfig.ncolors
-#     for j in one(nc):nc
-#         g!(hessconfig.G, θ)
-#         g!(hessconfig.δG, θ + δ * @view hessconfig.D[:, j])
-#         hessconfig.Hcomp_buffer[:, j] .= (hessconfig.δG .- hessconfig.G) ./ δ
-#     end
-#     ii, jj, vv = findnz(hessconfig.Hsparsity)
-#     for (i, j) in zip(ii, jj)
-#         H[i, j] = hessconfig.Hcomp_buffer[i, hessconfig.Hcolors[j]]
-#     end
-# end
-
-# function sparse_hessian(f, g!, θ,  hessconfig::HessianConfig, δ=sqrt(eps(Float64)))
-#     i, j, v = findnz(hessconfig.Hsparsity)
-#     H = sparse(i, j, zeros(eltype(θ), length(v)))
-#     sparse_hessian!(H, f, g!, θ, hessconfig, δ)
-#     return H
-# end
-
-
-# function MarginalLogDensity(logdensity::Function, n::TI,
-#         imarginal::AbstractVector{TI}; method=LaplaceApprox(), forwarddiff_sparsity=false) where {TI<:Integer}
-#     ijoint = setdiff(1:n, imarginal)
-#     hessconfig = HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity)
-#     mld  = MarginalLogDensity(logdensity, n, imarginal, ijoint, method, hessconfig)
-#     return mld
-# end
-
-dimension(mld::MarginalLogDensity) = mld.n
-imarginal(mld::MarginalLogDensity) = mld.imarginal
-ijoint(mld::MarginalLogDensity) = mld.ijoint
-nmarginal(mld::MarginalLogDensity) = length(mld.imarginal)
-njoint(mld::MarginalLogDensity) = length(mld.ijoint)
-
-function merge_parameters(θmarg::AbstractVector{T1}, θjoint::AbstractVector{T2}, imarg, ijoint) where {T1,T2}
-    N = length(θmarg) + length(θjoint)
-    θ = Vector{promote_type(T1, T2)}(undef, N)
-    θ[imarg] .= θmarg
-    θ[ijoint] .= θjoint
-    return θ
-end
-
-split_parameters(θ, imarg, ijoint) = (θ[imarg], θ[ijoint])
-
-function (mld::MarginalLogDensity)(θmarg::AbstractVector{T1}, θjoint::AbstractVector{T2}) where {T1, T2}
-    θ = merge_parameters(θmarg, θjoint, imarginal(mld), ijoint(mld))
-    return mld.logdensity(θ)
-end
-
-function (mld::MarginalLogDensity)(θjoint::AbstractVector{T}, verbose=false) where T
-    integral = _marginalize(mld, θjoint, mld.method, verbose)
-    return integral
-end
-
-############################################################################################
-
-function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
-        method::LaplaceApprox, verbose) where T
-    N = nmarginal(mld)
-    θmarginal0 = ones(T, N)
-    f = (θmarginal) -> -mld(θmarginal, θjoint)
-    gconfig = ForwardDiff.GradientConfig(f, θmarginal0)
-    g! = (G, x) -> ForwardDiff.gradient!(G, f, x, gconfig)
-    hsparsity = mld.hessconfig.sparsity[imarginal(mld), imarginal(mld)]
-    hcolors = matrix_colors(hsparsity)
-    hescache = ForwardColorHesCache(f, θmarginal0, hcolors, hsparsity, g!)
-    # h! = (H, x) -> sparse_hessian!(H, f, g!, x, mld.hessconfig)
-    h! = (H, x) -> numauto_color_hessian!(H, f, x, hescache)
-    H0 = numauto_color_hessian(f, θmarginal0, hescache)
-    td = TwiceDifferentiable(f, g!, h!, θmarginal0, zero(T), zeros(T, N), H0)
-
-    verbose && println("Optimizing...")
-    opt = optimize(td, θmarginal0)
-    verbose && println("Calculating Hessian at mode...")
-    h!(H0, opt.minimizer)
-    verbose && println("Laplace approximating...")
-    integral = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H0))
-    return integral
-end
-
-function _marginalize(mld::MarginalLogDensity, θjoint, method::Cubature, verbose)
-    f = θmarginal -> exp(mld(θmarginal, θjoint))
-    int, err = hcubature(f, method.lower, method.upper)
-    return log(int)
-end
-
-end # module

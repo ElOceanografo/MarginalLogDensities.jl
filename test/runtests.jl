@@ -1,7 +1,7 @@
 using MarginalLogDensities
 using Test
 using Distributions
-using Optim
+using Optimization, OptimizationOptimJL
 using ForwardDiff
 using LinearAlgebra
 using HCubature
@@ -9,60 +9,96 @@ using Random
 using SparseDiffTools
 
 N = 3
+μ = ones(N)
 σ = 1.5
-d = MvNormal(zeros(N), σ*I)
-logdensity(x) = logpdf(d, x)
-im = [1, 3]
-ij = [2]
-dmarginal = MvNormal(zeros(length(ij)), σ*I)
+d = MvNormal(μ, σ^2 * I)
+ld(u, p) = logpdf(d, u)
+iw = [1, 3]
+iv = [2]
+dmarginal = Normal(1.0, σ)dimension(mld::MarginalLogDensity) = length(mld.u)
+imarginal(mld::MarginalLogDensity) = mld.iw
+ijoint(mld::MarginalLogDensity) = mld.iv
+nmarginal(mld::MarginalLogDensity) = length(mld.iw)
+njoint(mld::MarginalLogDensity) = length(mld.iv)
+
+"""
+Splice together the estimated (fixed) parameters `v` and marginalized (random) parameters
+`w` into the single parameter vector `u`, based on their indices `iv` and `iw`.
+"""
+function merge_parameters(v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw) where {T1,T2}
+    N = length(v) + length(w)
+    u = Vector{promote_type(T1, T2)}(undef, N)
+    u[iv] .= v
+    u[iw] .= w
+    return u
+end
+
+"""
+Split the vector of all parameters `u` into its estimated (fixed) components `v` and
+marginalized (random) components `w`, based on their indices `iv` and `iw`.
+components
+"""
+split_parameters(u, iv, iw) = (u[iv], u[iw])
+u = randn(N)
+v = u[iv]
+w = u[iw]
 
 @testset "Constructors" begin
     for forwarddiff_sparsity in [false, true]
-        # hp = HessianConfig(zeros(N, N), zeros(N), N, zeros(N, N), zeros(N, N), zeros(N), zeros(N))
-        hp = ForwardColorHesCache(logdensity, zeros(N))
-        mld1 = MarginalLogDensity(logdensity, N, im, ij, LaplaceApprox(), hp)
-        mld2 = MarginalLogDensity(logdensity, N, im)
-        mld3 = MarginalLogDensity(logdensity, N, im, LaplaceApprox(), forwarddiff_sparsity)
-        mld4 = MarginalLogDensity(logdensity, N, im,
-            Cubature(-100ones(N), 100ones(N)))
+        mld1 = MarginalLogDensity(ld, u, iw, LaplaceApprox(), forwarddiff_sparsity)
+        mld2 = MarginalLogDensity(ld, u, iw, LaplaceApprox())
+        mld3 = MarginalLogDensity(ld, u, iw)
+        lb = -100ones(N)
+        ub = 100ones(N)
+        mld4 = MarginalLogDensity(ld, u, iw, Cubature(lb, ub), forwarddiff_sparsity)
+        mld5 = MarginalLogDensity(ld, u, iw, Cubature(lb, ub))
 
-        for mld in [mld2, mld3, mld4]
-            @test dimension(mld) == dimension(mld1) == N
-            @test imarginal(mld) == imarginal(mld1) == im
-            @test ijoint(mld) == ijoint(mld1) == ij
-            @test nmarginal(mld) == nmarginal(mld1) == length(imarginal(mld))
-            @test njoint(mld) == njoint(mld1) == length(ijoint(mld))
-            @test njoint(mld) + nmarginal(mld) == dimension(mld)
-            @test isempty(setdiff(1:N, union(im, ij)))
+        mlds = [mld1, mld2, mld3, mld4, mld5]
+        for i in 1:length(mlds)-1
+            for j in i+1:length(mlds)
+                mldi = mlds[i]
+                mldj = mlds[j]
+                @test dimension(mldi) == dimension(mldj)
+                @test imarginal(mldi) == imarginal(mldj)
+                @test ijoint(mldi) == ijoint(mldj)
+                @test nmarginal(mldi) == nmarginal(mldj)
+                @test njoint(mldi) == njoint(mldj)
+            end
+        end
+        for mld in mlds
+            @test all(mld.u .== u)
+            @test all(u .== merge_parameters(v, w, iv, iw))
+            v1, w1 = split_parameters(mld.u, mld.iv, mld.iw)
+            @test all(v1 .== v)
+            @test all(w1 .== w)
         end
     end
 end
 
-# @testset "Sparse Hessians" begin
-#     f(x) = -logdensity(x)
-#     hconf = HessianConfig(f, im, ij)    
-#     H = zeros(length(im), length(im))
-
-
-# end
-
 @testset "Approximations" begin
     x = 1.0:3.0
-    mld_laplace = MarginalLogDensity(logdensity, N, im, LaplaceApprox())
-    mld_cubature = MarginalLogDensity(logdensity, N, im,
-        Cubature(-100ones(2), 100ones(2)))
-
-    @test mld_laplace(x[im], x[ij]) == logdensity(x)
-    @test mld_cubature(x[im], x[ij]) == logdensity(x)
+    mld_laplace = MarginalLogDensity(ld, u, iw, LaplaceApprox())
+    lb = fill(-100.0, 2)
+    ub = fill(100.0, 2)
+    mld_cubature = MarginalLogDensity(ld, u, iw, Cubature(lb, ub))
+    
+    @test -mld_laplace.F(x[iw], (p=(), v=x[iv])) == ld(x, ())
+    prob = OptimizationProblem(mld_laplace.F, randn(2), (p=(), v=x[iv]))
+    sol = solve(prob, BFGS())
+    @test all(sol.u .≈ μ[iw])
+    
     # analytical: against 1D Gaussian
-    @test mld_laplace(x[ij]) ≈ logpdf(dmarginal, x[ij])
-    @test mld_cubature(x[ij]) ≈ logpdf(dmarginal, x[ij])
+    logpdf_true = logpdf(dmarginal, x[only(iv)])
+    logpdf_laplace = mld_laplace(x[iv], ())
+    logpdf_cubature = mld_cubature(x[iv], ())
+
+    @test logpdf_laplace  ≈ logpdf_true
+    @test logpdf_cubature  ≈ logpdf_true
     # test against numerical integral
-    int, err = hcubature(x -> exp(logdensity([x[1], 2, x[2]])),
-        -100*ones(2), 100*ones(2))
-    @test log(int) ≈ mld_laplace(x[ij])
-    @test log(int) ≈ mld_cubature(x[ij])
-    # marginalized density should be higher than joint density at same point
-    @test mld_laplace(x[ij]) >= mld_laplace(x[im], x[ij])
-    @test mld_cubature(x[ij]) >= mld_cubature(x[im], x[ij])
+    int, err = hcubature(w -> exp(ld([w[1], x[only(iv)], w[2]], ())), lb, ub)
+    @test log(int) ≈ logpdf_laplace
+    @test log(int) ≈ logpdf_cubature
+    # # marginalized density should be higher than joint density at same point
+    @test logpdf_laplace >= mld_laplace.logdensity(x, ())
+    @test logpdf_cubature >= mld_cubature.logdensity(x, ())
 end

@@ -50,12 +50,12 @@ can be called as `mld(θ)`, where `θ` is a vector with length `n-m`.  It can al
 as `mld(u, θ)`, where `u` is a length-`m` vector of the marginalized variables.  In this
 case, the return value is the same as the full conditional `logdensity` with `u` and `θ`
 """
-struct MarginalLogDensity{TI<:Integer, TM<:AbstractMarginalizer,
-        TV<:AbstractVector{TI}, TF, TF1, TU}
+struct MarginalLogDensity{TF, TU<:AbstractVector, TV<:AbstractVector, TW<:AbstractVector, 
+        TF1<:OptimizationFunction, TM<:AbstractMarginalizer}
     logdensity::TF
     u::TU
     iv::TV
-    iw::TV
+    iw::TW
     F::TF1
     method::TM
 end
@@ -128,7 +128,7 @@ function _marginalize(mld, v, p, method::LaplaceApprox, verbose)
     H = -ForwardDiff.hessian(w -> mld.F(w, p2), wopt)
     mld.u[mld.iw] = wopt
     verbose && println("Integrating...")
-    integral = -sol.objective + log((2π)^(nw/2)) - log(det(H)^0.5)
+    integral = -sol.objective + (nw/2)* log(2π) - 0.5logabsdet(H)[1]
     verbose && println("Done!")
     return integral#, sol 
 end
@@ -137,6 +137,8 @@ function _marginalize(mld, v, p, method::Cubature, verbose)
     p2 = (;p, v)
     integral, err = hcubature(w -> exp(-mld.F(w, p2)), method.lower, method.upper)
     return log(integral)
+end
+
 end
 
 # Was using this for testing/troubleshooting, will probably delete later

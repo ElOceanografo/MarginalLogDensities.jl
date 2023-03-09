@@ -33,6 +33,7 @@ struct Cubature{T} <: AbstractMarginalizer
     upper::AbstractVector{T}
     lower::AbstractVector{T}
 end
+Cubature(upper::T1, lower::T2) where {T1, T2} = Cubature(promote(upper, lower)...)
 
 """
     `MarginalLogDensity(logdensity, n, imarginal, [method=LaplaceApprox()])`

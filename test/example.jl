@@ -5,7 +5,7 @@ using Random
 using Optim
 using BenchmarkTools
 
-Random.seed!(1234)
+Random.seed!(123)
 ncategories = 8
 categories = 1:ncategories
 μ0 = 5.0
@@ -13,37 +13,39 @@ categories = 1:ncategories
 aa = rand(Normal(μ0, σ0), ncategories)
 b = 4.5
 σ = 0.5
-const category = repeat(categories, inner=50)
-const n = length(category)
-const x = rand(Uniform(-1, 1), n)
+category = repeat(categories, inner=200)
+n = length(category)
+x = rand(Uniform(-1, 1), n)
 μ = [aa[category[i]] + b * x[i] for i in 1:n]
-const y = rand.(Normal.(μ, σ))
+y = rand.(Normal.(μ, σ))
 
 scatter(x, y, color=category, label="")
 
-function loglik(θ::Vector{T}) where T
+function loglik(θ::Vector{T}, p) where T
     μ0 = θ[1]
     σ0 = exp(θ[2])
     aa = θ[3:10]
     b = θ[11]
     σ = exp(θ[12])
-    μ = [aa[category[i]] + b * x[i] for i in 1:n]
-    return loglikelihood(Normal(μ0, σ0), aa) + sum(logpdf.(Normal.(μ, σ), y))
+    μ = [aa[p.category[i]] + b * p.x[i] for i in 1:p.n]
+    return loglikelihood(Normal(μ0, σ0), aa) + sum(logpdf.(Normal.(μ, σ), p.y))
 end
 
 θtrue = [μ0; log(σ0); aa; b; log(σ)]
+p = (; category, x, y, n)
 nθ = length(θtrue)
-loglik(θtrue)
-θmarg = θtrue[[1, 2, 11, 12]]
+@code_warntype loglik(θtrue, p)
 
-mld = MarginalLogDensity(loglik, nθ, collect(3:10))
-@btime mld($aa, $θmarg) # 5.3 μs
-@btime mld($θmarg) # 115 μs
-@profiler for i in 1:5000
-    mld([μ0, log(σ0), b, log(σ)])
+θ0 = ones(length(θtrue))
+θmarg = θ0[[1, 2, 11, 12]]
+mld = MarginalLogDensity(loglik, θ0, collect(3:10), LaplaceApprox())
+@btime mld($θmarg, $p) # 5.3 μs
+# @btime mld($θmarg) # 115 μs
+@profview for i in 1:500
+    mld(θmarg, p)
 end
 
-opt = optimize(θjoint -> -mld(θjoint), ones(4))
+opt = optimize(θjoint -> -mld(θjoint, p), ones(4))
 μ0_opt, logσ0_opt, b_opt, logσ_opt = opt.minimizer
 
                     # should be:
@@ -55,7 +57,7 @@ exp(logσ_opt)       # 0.5
 θ_opt = [μ0_opt, exp(logσ0_opt), b_opt, exp(logσ_opt)]
 
 using FiniteDiff, LinearAlgebra
-H = FiniteDiff.finite_difference_hessian(θjoint -> -mld(θjoint), opt.minimizer)
+H = FiniteDiff.finite_difference_hessian(θjoint -> -mld(θjoint, p), opt.minimizer)
 std_errors = 1 ./ sqrt.(diag(H))
 
 θ_names = ["μ₀", "σ₀", "b", "σ"]

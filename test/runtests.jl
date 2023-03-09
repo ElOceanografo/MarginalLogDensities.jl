@@ -15,11 +15,7 @@ d = MvNormal(μ, σ^2 * I)
 ld(u, p) = logpdf(d, u)
 iw = [1, 3]
 iv = [2]
-dmarginal = Normal(1.0, σ)dimension(mld::MarginalLogDensity) = length(mld.u)
-imarginal(mld::MarginalLogDensity) = mld.iw
-ijoint(mld::MarginalLogDensity) = mld.iv
-nmarginal(mld::MarginalLogDensity) = length(mld.iw)
-njoint(mld::MarginalLogDensity) = length(mld.iv)
+dmarginal = Normal(1.0, σ)
 
 """
 Splice together the estimated (fixed) parameters `v` and marginalized (random) parameters
@@ -101,4 +97,49 @@ end
     # # marginalized density should be higher than joint density at same point
     @test logpdf_laplace >= mld_laplace.logdensity(x, ())
     @test logpdf_cubature >= mld_cubature.logdensity(x, ())
+end
+
+@testset "Parameters" begin
+    Random.seed!(1234)
+    ncategories = 8
+    categories = 1:ncategories
+    μ0 = 5.0
+    σ0 = 5.0
+    aa = rand(Normal(μ0, σ0), ncategories)
+    b = 4.5
+    σ = 0.5
+    category = repeat(categories, inner=200)
+    n = length(category)
+    x = rand(Uniform(-1, 1), n)
+    μ = [aa[category[i]] + b * x[i] for i in 1:n]
+    y = rand.(Normal.(μ, σ))
+        
+    function loglik(θ::Vector{T}, p) where T
+        μ0 = θ[1]
+        σ0 = exp(θ[2])
+        aa = θ[3:10]
+        b = θ[11]
+        σ = exp(θ[12])
+        μ = [aa[p.category[i]] + b * p.x[i] for i in 1:p.n]
+        return loglikelihood(Normal(μ0, σ0), aa) + sum(logpdf.(Normal.(μ, σ), p.y))
+    end
+    
+    θtrue = [μ0; log(σ0); aa; b; log(σ)]
+    p = (; category, x, y, n)
+    nθ = length(θtrue)
+    
+    θ0 = ones(length(θtrue))
+    θmarg = θ0[[1, 2, 11, 12]]
+    mld_laplace = MarginalLogDensity(loglik, θ0, collect(3:10), LaplaceApprox())
+    mld_cubature = MarginalLogDensity(loglik, θ0, collect(3:10), 
+        Cubature(fill(-5.0, 8), fill(5, 8)))
+
+    opt_laplace = optimize(θ -> -mld_laplace(θ, p), ones(4))
+    # opt_cubature = optimize(θ -> -mld_cubature(θ, p), ones(4))
+    # println(opt_laplace.minimizer)
+    # println(opt_cubature.minimizer)
+    # @test all(opt_laplace.minimizer .≈ opt_cubature.minimizer)
+end
+
+@testset "Sparse LaplaceApprox" begin
 end

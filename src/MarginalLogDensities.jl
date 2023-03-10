@@ -27,13 +27,38 @@ export MarginalLogDensity,
 
 abstract type AbstractMarginalizer end
 
-struct LaplaceApprox <: AbstractMarginalizer end
+# struct LaplaceApprox <: AbstractMarginalizer end
+## struct LaplaceApprox <: AbstractMarginalizer
+struct LaplaceApprox{TA, TT, TS} <: AbstractMarginalizer
+    # sparsehess::Bool
+    adtype::TA
+    opt_func_kwargs::TT
+    solver::TS
+end
 
-struct Cubature{T} <: AbstractMarginalizer
+# function LaplaceApprox(sparsehess=false, adtype=AutoForwardDiff(), opt_func_kwargs=(;))
+function LaplaceApprox(adtype=Optimization.AutoForwardDiff(), opt_func_kwargs=(;); 
+        solver=LBFGS())
+   return LaplaceApprox(adtype, opt_func_kwargs, solver)
+end
+
+#=
+in MarginalLogDensity constructor, can then do:
+    if sparse
+    # Hcolors, Hsparsity = get_hessian_sparsity(logdensity, u, forwarddiff_sparsity)
+    f(w, p2) = -logdensity(merge_parameters(p2.v, w, iv, iw), p2.p)
+    F = OptimizationFunction(f, method.adtype; method.kwargs...)
+=#
+
+struct Cubature{TA, TT, T} <: AbstractMarginalizer
+    adtype::TA
+    opt_func_kwargs::TT
     upper::AbstractVector{T}
     lower::AbstractVector{T}
 end
-Cubature(upper::T1, lower::T2) where {T1, T2} = Cubature(promote(upper, lower)...)
+function Cubature(upper::T1, lower::T2) where {T1, T2}
+    return Cubature(Optimization.AutoForwardDiff(), (;), promote(upper, lower)...)
+end
 
 """
     `MarginalLogDensity(logdensity, n, imarginal, [method=LaplaceApprox()])`
@@ -71,15 +96,16 @@ function get_hessian_sparsity(f, u, forwarddiff_sparsity)
         Hsparsity = hessian_sparsity(f, u)
     end
     Hcolors = matrix_colors(Hsparsity)
+
     return Hsparsity, Hcolors
 end
 
 function MarginalLogDensity(logdensity, u, iw, method=LaplaceApprox(), forwarddiff_sparsity=false)
     n = length(u)
     iv = setdiff(1:n, iw)
-    # Hcolors, Hsparsity = get_hessian_sparsity(logdensity, u, forwarddiff_sparsity)
+    # hess_sparsity, hess_colors, hess = get_hessian_sparsity(f, u, iw, forwarddiff_sparsity)
     f(w, p2) = -logdensity(merge_parameters(p2.v, w, iv, iw), p2.p)
-    F = OptimizationFunction(f, Optimization.AutoForwardDiff())
+    F = OptimizationFunction(f, method.adtype; method.opt_func_kwargs...)
     return MarginalLogDensity(logdensity, u, iv, iw, F, method)
 end
 
@@ -109,6 +135,8 @@ function merge_parameters(v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw) 
     u[iw] .= w
     return u
 end
+# TODO: add ChainRules for merge_parameters so it works w/ Zygote
+
 
 """
 Split the vector of all parameters `u` into its estimated (fixed) components `v` and
@@ -123,7 +151,7 @@ function _marginalize(mld, v, p, method::LaplaceApprox, verbose)
     p2 = (;p, v)
     verbose && println("Finding mode...")
     prob = OptimizationProblem(mld.F, w0, p2)
-    sol = solve(prob, BFGS())
+    sol = solve(prob, method.solver)
     wopt = sol.u
     verbose && println("Calculating hessian...")
     H = -ForwardDiff.hessian(w -> mld.F(w, p2), wopt)

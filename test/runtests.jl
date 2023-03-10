@@ -2,7 +2,7 @@ using MarginalLogDensities
 using Test
 using Distributions
 using Optimization, OptimizationOptimJL
-using ForwardDiff
+using ForwardDiff, ReverseDiff, Zygote
 using LinearAlgebra
 using HCubature
 using Random
@@ -16,25 +16,6 @@ ld(u, p) = logpdf(d, u)
 iw = [1, 3]
 iv = [2]
 dmarginal = Normal(1.0, σ)
-
-"""
-Splice together the estimated (fixed) parameters `v` and marginalized (random) parameters
-`w` into the single parameter vector `u`, based on their indices `iv` and `iw`.
-"""
-function merge_parameters(v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw) where {T1,T2}
-    N = length(v) + length(w)
-    u = Vector{promote_type(T1, T2)}(undef, N)
-    u[iv] .= v
-    u[iw] .= w
-    return u
-end
-
-"""
-Split the vector of all parameters `u` into its estimated (fixed) components `v` and
-marginalized (random) components `w`, based on their indices `iv` and `iw`.
-components
-"""
-split_parameters(u, iv, iw) = (u[iv], u[iw])
 u = randn(N)
 v = u[iv]
 w = u[iw]
@@ -141,5 +122,23 @@ end
     # @test all(opt_laplace.minimizer .≈ opt_cubature.minimizer)
 end
 
-@testset "Sparse LaplaceApprox" begin
+@testset "AD types" begin
+    adtypes = [Optimization.AutoFiniteDiff, 
+        Optimization.AutoForwardDiff, Optimization.AutoReverseDiff]
+        # Optimization.AutoZygote]
+    solvers = [NelderMead, LBFGS, BFGS]
+
+    marginalizer = LaplaceApprox(SciMLBase.NoAD(), solver=NelderMead())
+    mld = MarginalLogDensity(ld, u, iw, marginalizer)
+    L0 = mld(v, ())
+    for adtype in adtypes
+        for solver in solvers
+            println("AD: $(adtype), Solver: $(solver)")
+            marginalizer = LaplaceApprox(adtype(), solver=solver())
+            mld = MarginalLogDensity(ld, u, iw, marginalizer)
+            @test L0 ≈ mld(v, ())
+        end
+   end
 end
+# @testset "Sparse LaplaceApprox" begin
+# end

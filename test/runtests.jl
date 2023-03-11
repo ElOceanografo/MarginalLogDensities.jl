@@ -26,8 +26,9 @@ w = u[iw]
             mld1 = MarginalLogDensity(ld, u, iw, LaplaceApprox(), forwarddiff_sparsity)
             mld2 = MarginalLogDensity(ld, u, iw, LaplaceApprox())
             mld3 = MarginalLogDensity(ld, u, iw)
+            mld4 = MarginalLogDensity(ld, u, iw)
 
-            mlds = [mld1, mld2, mld3]
+            mlds = [mld1, mld2, mld3, mld4]
             for i in 1:length(mlds)-1
                 for j in i+1:length(mlds)
                     mldi = mlds[i]

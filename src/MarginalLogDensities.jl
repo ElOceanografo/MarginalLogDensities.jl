@@ -81,37 +81,47 @@ can be called as `mld(θ)`, where `θ` is a vector with length `n-m`.  It can al
 as `mld(u, θ)`, where `u` is a length-`m` vector of the marginalized variables.  In this
 case, the return value is the same as the full conditional `logdensity` with `u` and `θ`
 """
-struct MarginalLogDensity{TF, TU<:AbstractVector, TV<:AbstractVector, TW<:AbstractVector, 
+struct MarginalLogDensity{TF, TU<:AbstractVector, TP, TV<:AbstractVector, TW<:AbstractVector, 
         TF1<:OptimizationFunction, TM<:AbstractMarginalizer}
     logdensity::TF
     u::TU
+    p::TP
     iv::TV
     iw::TW
     F::TF1
     method::TM
 end
 
-function get_hessian_sparsity(f, u, forwarddiff_sparsity)
-    if forwarddiff_sparsity
-        println("Detecting Hessian sparsity via ForwardDiff...")
-        H = ForwardDiff.hessian(f, u)
-        Hsparsity = sparse(H) .!= 0
-    else
-        println("Detecting Hessian sparsity via SparsityDetection...")
-        Hsparsity = hessian_sparsity(f, u)
-    end
-    Hcolors = matrix_colors(Hsparsity)
+# function get_hessian_sparsity(f, u, p2, autosparsity)
+#     if autosparsity == :finitediff 
+#         H = FiniteDiff.hessian(f, u)
+#         hess_prototype = sparse(H) 
+#     elseif autosparsity == :forwarddiff
+#         H = ForwardDiff.hessian(f, u)
+#         hess_prototype = (sparse(H) .!= 0)
+#     elseif autosparsity == :sparsitydetection
+#         hess_prototype = hessian_sparsity(f, u) .* one(eltype(u))
+#     elseif autosparsity == :symbolics
 
-    return Hsparsity, Hcolors
-end
 
-function MarginalLogDensity(logdensity, u, iw, method=LaplaceApprox(), forwarddiff_sparsity=false)
+#     hess_colorvec = matrix_colors(Hsparsity)
+
+#     return hess_prototype
+# end
+
+# autosparsity = :none, :finitediff :forwarddiff, :sparsitydetection, :symbolics
+function MarginalLogDensity(logdensity, u, iw, p=(), method=LaplaceApprox(), sparse_hessian=false)
     n = length(u)
     iv = setdiff(1:n, iw)
-    # hess_sparsity, hess_colors, hess = get_hessian_sparsity(f, u, iw, forwarddiff_sparsity)
+    # hess_sparsity, hess_colors, hess = get_hessian_sparsity(f, u, iw, autosparsity=:none)
     f(w, p2) = -logdensity(merge_parameters(p2.v, w, iv, iw), p2.p)
     F = OptimizationFunction(f, method.adtype; method.opt_func_kwargs...)
-    return MarginalLogDensity(logdensity, u, iv, iw, F, method)
+
+    # if autosparsity != :none
+    #     F = OptimizationFunction(f, method.adtype; method.opt_func_kwargs...)
+    # else
+    #     hess_prototype, hess_colorvec = get_hessian_sparsity(f, u)
+    return MarginalLogDensity(logdensity, u, p, iv, iw, F, method)
 end
 
 function Base.show(io::IO, mld::MarginalLogDensity)

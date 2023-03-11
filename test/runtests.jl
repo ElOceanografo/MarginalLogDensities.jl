@@ -21,34 +21,46 @@ v = u[iv]
 w = u[iw]
 
 @testset "Constructors" begin
-    for forwarddiff_sparsity in [false, true]
-        mld1 = MarginalLogDensity(ld, u, iw, LaplaceApprox(), forwarddiff_sparsity)
-        mld2 = MarginalLogDensity(ld, u, iw, LaplaceApprox())
-        mld3 = MarginalLogDensity(ld, u, iw)
-        lb = -100ones(N)
-        ub = 100ones(N)
-        mld4 = MarginalLogDensity(ld, u, iw, Cubature(lb, ub), forwarddiff_sparsity)
-        mld5 = MarginalLogDensity(ld, u, iw, Cubature(lb, ub))
+    @testset "MarginalLogDensity" begin
+        for forwarddiff_sparsity in [false, true]
+            mld1 = MarginalLogDensity(ld, u, iw, LaplaceApprox(), forwarddiff_sparsity)
+            mld2 = MarginalLogDensity(ld, u, iw, LaplaceApprox())
+            mld3 = MarginalLogDensity(ld, u, iw)
 
-        mlds = [mld1, mld2, mld3, mld4, mld5]
-        for i in 1:length(mlds)-1
-            for j in i+1:length(mlds)
-                mldi = mlds[i]
-                mldj = mlds[j]
-                @test dimension(mldi) == dimension(mldj)
-                @test imarginal(mldi) == imarginal(mldj)
-                @test ijoint(mldi) == ijoint(mldj)
-                @test nmarginal(mldi) == nmarginal(mldj)
-                @test njoint(mldi) == njoint(mldj)
+            mlds = [mld1, mld2, mld3]
+            for i in 1:length(mlds)-1
+                for j in i+1:length(mlds)
+                    mldi = mlds[i]
+                    mldj = mlds[j]
+                    @test dimension(mldi) == dimension(mldj)
+                    @test imarginal(mldi) == imarginal(mldj)
+                    @test ijoint(mldi) == ijoint(mldj)
+                    @test nmarginal(mldi) == nmarginal(mldj)
+                    @test njoint(mldi) == njoint(mldj)
+                end
+            end
+            for mld in mlds
+                @test all(mld.u .== u)
+                @test all(u .== merge_parameters(v, w, iv, iw))
+                v1, w1 = split_parameters(mld.u, mld.iv, mld.iw)
+                @test all(v1 .== v)
+                @test all(w1 .== w)
             end
         end
-        for mld in mlds
-            @test all(mld.u .== u)
-            @test all(u .== merge_parameters(v, w, iv, iw))
-            v1, w1 = split_parameters(mld.u, mld.iv, mld.iw)
-            @test all(v1 .== v)
-            @test all(w1 .== w)
-        end
+    end
+    @testset "Marginalizers" begin
+        adtype = Optimization.AutoForwardDiff()
+        solver = BFGS()
+        @test_nowarn LaplaceApprox()
+        @test_nowarn LaplaceApprox(solver)
+        @test_nowarn LaplaceApprox(solver, adtype=adtype, grad=nothing, hess=nothing)
+
+        @test_nowarn Cubature()
+        @test_nowarn Cubature(solver=solver)
+        @test_nowarn Cubature(solver=solver, adtype=adtype)
+        @test_nowarn Cubature(solver=solver, adtype=adtype, grad=nothing, hess=nothing)
+        @test_nowarn Cubature(upper = fill(-1, 5), lower=fill(1, 5))
+        @test_nowarn Cubature(upper = fill(-1, 5), lower=fill(1, 5), solver=solver)
     end
 end
 
@@ -57,27 +69,32 @@ end
     mld_laplace = MarginalLogDensity(ld, u, iw, LaplaceApprox())
     lb = fill(-100.0, 2)
     ub = fill(100.0, 2)
-    mld_cubature = MarginalLogDensity(ld, u, iw, Cubature(lb, ub))
+    mld_cubature1 = MarginalLogDensity(ld, u, iw, Cubature(lower=lb, upper=ub))
+    mld_cubature2 = MarginalLogDensity(ld, u, iw, Cubature())
     
     @test -mld_laplace.F(x[iw], (p=(), v=x[iv])) == ld(x, ())
     prob = OptimizationProblem(mld_laplace.F, randn(2), (p=(), v=x[iv]))
     sol = solve(prob, BFGS())
     @test all(sol.u .≈ μ[iw])
-    
+
     # analytical: against 1D Gaussian
     logpdf_true = logpdf(dmarginal, x[only(iv)])
     logpdf_laplace = mld_laplace(x[iv], ())
-    logpdf_cubature = mld_cubature(x[iv], ())
+    logpdf_cubature1 = mld_cubature1(x[iv], ())
+    logpdf_cubature2 = mld_cubature2(x[iv], ())
 
     @test logpdf_laplace  ≈ logpdf_true
-    @test logpdf_cubature  ≈ logpdf_true
+    @test logpdf_cubature1  ≈ logpdf_true
+    @test logpdf_cubature2  ≈ logpdf_true
     # test against numerical integral
     int, err = hcubature(w -> exp(ld([w[1], x[only(iv)], w[2]], ())), lb, ub)
     @test log(int) ≈ logpdf_laplace
-    @test log(int) ≈ logpdf_cubature
+    @test log(int) ≈ logpdf_cubature1
+    @test log(int) ≈ logpdf_cubature2
     # # marginalized density should be higher than joint density at same point
     @test logpdf_laplace >= mld_laplace.logdensity(x, ())
-    @test logpdf_cubature >= mld_cubature.logdensity(x, ())
+    @test logpdf_cubature1 >= mld_cubature1.logdensity(x, ())
+    @test logpdf_cubature2 >= mld_cubature2.logdensity(x, ())
 end
 
 @testset "Parameters" begin
@@ -113,7 +130,7 @@ end
     θmarg = θ0[[1, 2, 11, 12]]
     mld_laplace = MarginalLogDensity(loglik, θ0, collect(3:10), LaplaceApprox())
     mld_cubature = MarginalLogDensity(loglik, θ0, collect(3:10), 
-        Cubature(fill(-5.0, 8), fill(5, 8)))
+        Cubature(lower=fill(-5.0, 8), upper=fill(5, 8)))
 
     opt_laplace = optimize(θ -> -mld_laplace(θ, p), ones(4))
     # opt_cubature = optimize(θ -> -mld_cubature(θ, p), ones(4))
@@ -128,13 +145,17 @@ end
         # Optimization.AutoZygote]
     solvers = [NelderMead, LBFGS, BFGS]
 
-    marginalizer = LaplaceApprox(SciMLBase.NoAD(), solver=NelderMead())
+    marginalizer = LaplaceApprox(NelderMead(); adtype=SciMLBase.NoAD())
     mld = MarginalLogDensity(ld, u, iw, marginalizer)
     L0 = mld(v, ())
+    marginalizer = LaplaceApprox(NelderMead(); adtype=Optimization.AutoForwardDiff())
+    mld = MarginalLogDensity(ld, u, iw, marginalizer)
+    L1 = mld(v, ())
+    @test L0 ≈ L1
     for adtype in adtypes
         for solver in solvers
             println("AD: $(adtype), Solver: $(solver)")
-            marginalizer = LaplaceApprox(adtype(), solver=solver())
+            marginalizer = LaplaceApprox(solver(), adtype=adtype())
             mld = MarginalLogDensity(ld, u, iw, marginalizer)
             @test L0 ≈ mld(v, ())
         end

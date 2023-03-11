@@ -42,8 +42,8 @@ ix = 5:length(u0)
 θ0 = u0[iθ]
 mld = MarginalLogDensity(loglik, u0, ix, LaplaceApprox())
 @btime mld($θ0, $p) # 5.3 μs
-@profview for i in 1:500
-    mld(θmarg, p)
+@profview for i in 1:1000
+    mld(θ0, p)
 end
 
 opt = optimize(θ -> -mld(θ, p), ones(4))

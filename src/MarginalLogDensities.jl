@@ -23,7 +23,9 @@ export MarginalLogDensity,
     nmarginal,
     njoint,
     merge_parameters,
-    split_parameters
+    split_parameters,
+    optimize_marginal!,
+    hessdiag
 
 abstract type AbstractMarginalizer end
 
@@ -31,15 +33,15 @@ abstract type AbstractMarginalizer end
 ## struct LaplaceApprox <: AbstractMarginalizer
 struct LaplaceApprox{TA, TT, TS} <: AbstractMarginalizer
     # sparsehess::Bool
+    solver::TS
     adtype::TA
     opt_func_kwargs::TT
-    solver::TS
 end
 
 # function LaplaceApprox(sparsehess=false, adtype=AutoForwardDiff(), opt_func_kwargs=(;))
-function LaplaceApprox(adtype=Optimization.AutoForwardDiff(), opt_func_kwargs=(;); 
-        solver=LBFGS())
-   return LaplaceApprox(adtype, opt_func_kwargs, solver)
+function LaplaceApprox(solver=LBFGS(); adtype=Optimization.AutoForwardDiff(),
+    opt_func_kwargs...)
+    return LaplaceApprox(solver, adtype, opt_func_kwargs)
 end
 
 #=
@@ -50,14 +52,17 @@ in MarginalLogDensity constructor, can then do:
     F = OptimizationFunction(f, method.adtype; method.kwargs...)
 =#
 
-struct Cubature{TA, TT, T} <: AbstractMarginalizer
+struct Cubature{TA, TT, TS, T} <: AbstractMarginalizer
+    solver::TS
     adtype::TA
     opt_func_kwargs::TT
-    upper::AbstractVector{T}
-    lower::AbstractVector{T}
+    upper::T
+    lower::T
 end
-function Cubature(upper::T1, lower::T2) where {T1, T2}
-    return Cubature(Optimization.AutoForwardDiff(), (;), promote(upper, lower)...)
+
+function Cubature(; solver=LBFGS(), adtype=Optimization.AutoForwardDiff(), 
+    upper=nothing, lower=nothing, opt_func_kwargs...)
+    return Cubature(solver, adtype, opt_func_kwargs, promote(upper, lower)...)
 end
 
 """
@@ -145,26 +150,54 @@ components
 """
 split_parameters(u, iv, iw) = (u[iv], u[iw])
 
-function _marginalize(mld, v, p, method::LaplaceApprox, verbose)
+function optimize_marginal!(mld, p2)
     w0 = mld.u[mld.iw]
-    nw = length(w0)
+    prob = OptimizationProblem(mld.F, w0, p2)
+    sol = solve(prob, mld.method.solver)
+    wopt = sol.u
+    mld.u[mld.iw] = wopt
+    return sol
+end
+
+function _marginalize(mld, v, p, method::LaplaceApprox, verbose)
     p2 = (;p, v)
     verbose && println("Finding mode...")
-    prob = OptimizationProblem(mld.F, w0, p2)
-    sol = solve(prob, method.solver)
-    wopt = sol.u
+    sol = optimize_marginal!(mld, p2)
     verbose && println("Calculating hessian...")
-    H = -ForwardDiff.hessian(w -> mld.F(w, p2), wopt)
-    mld.u[mld.iw] = wopt
+    H = -ForwardDiff.hessian(w -> mld.F(w, p2), sol.u)
     verbose && println("Integrating...")
+    nw = length(mld.iw)
     integral = -sol.objective + (nw/2)* log(2π) - 0.5logabsdet(H)[1]
     verbose && println("Done!")
     return integral#, sol 
 end
 
+function hessdiag(f, x::Vector{T}) where T
+    Δx = sqrt(eps(T))
+    x .+= Δx
+    g1 = ForwardDiff.gradient(f, x)
+    x .-= 2Δx
+    g2 = ForwardDiff.gradient(f, x)
+    x .+= Δx # reset u
+    return (g1 .- g2) ./ 2Δx
+end
+
 function _marginalize(mld, v, p, method::Cubature, verbose)
     p2 = (;p, v)
-    integral, err = hcubature(w -> exp(-mld.F(w, p2)), method.lower, method.upper)
+    if method.lower == nothing || method.upper == nothing
+        sol = optimize_marginal!(mld, p2)
+        wopt = sol.u
+        h = hessdiag(w -> mld.F(w, p2), wopt)
+        se = 1 ./ sqrt.(h)
+        upper = wopt .+ 6se
+        lower = wopt .- 6se
+    else
+        lower = method.lower
+        upper = method.upper
+    end
+    println(upper)
+    println(lower)
+    integral, err = hcubature(w -> exp(-mld.F(w, p2)), lower, upper)
     return log(integral)
 end
 

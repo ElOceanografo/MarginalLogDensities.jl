@@ -3,7 +3,7 @@ using Test
 using Distributions
 using Optimization, OptimizationOptimJL
 using ForwardDiff, ReverseDiff, Zygote
-using LinearAlgebra
+using LinearAlgebra, SparseArrays
 using HCubature
 using Random
 using SparseDiffTools
@@ -23,12 +23,11 @@ w = u[iw]
 @testset "Constructors" begin
     @testset "MarginalLogDensity" begin
         for forwarddiff_sparsity in [false, true]
-            mld1 = MarginalLogDensity(ld, u, iw, LaplaceApprox(), forwarddiff_sparsity)
-            mld2 = MarginalLogDensity(ld, u, iw, LaplaceApprox())
+            mld1 = MarginalLogDensity(ld, u, iw, (), LaplaceApprox())
+            mld2 = MarginalLogDensity(ld, u, iw, ())
             mld3 = MarginalLogDensity(ld, u, iw)
-            mld4 = MarginalLogDensity(ld, u, iw)
 
-            mlds = [mld1, mld2, mld3, mld4]
+            mlds = [mld1, mld2, mld3]
             for i in 1:length(mlds)-1
                 for j in i+1:length(mlds)
                     mldi = mlds[i]
@@ -65,7 +64,38 @@ w = u[iw]
     end
 end
 
-@testset "Approximations" begin
+@testset "Sparsity detection" begin
+    f(u, p) = dot(u, u) + p.x
+    u = ones(5)
+    p = (x = 1,)
+
+    # helper to check that hessian for this function is correct (-2 on diag, 0 elsewhere)
+    function has_correct_pattern(H)
+        ncorrect = 0
+        for i in 1:size(H, 1)
+            for j in 1:size(H, 2)
+                if i == j
+                    ncorrect += (H[i, j] != 0)
+                else
+                    ncorrect += (H[i, j] == 0)
+                end
+            end
+        end
+        return ncorrect == size(H, 1)^2
+    end
+
+    for autosparsity in [:none, :finitediff, :forwarddiff, :sparsitydetection]#, :symbolics]
+        hess_prototype = MarginalLogDensities.get_hessian_prototype(f, u, p, autosparsity)
+        @test eltype(hess_prototype) == eltype(u)
+        @test size(hess_prototype, 1) == size(hess_prototype, 2)
+        @test size(hess_prototype, 1) == length(u)
+        if autosparsity != :none
+            @test has_correct_pattern(hess_prototype)
+        end
+    end
+end
+
+@testset "Dense approximations" begin
     x = 1.0:3.0
     mld_laplace = MarginalLogDensity(ld, u, iw, LaplaceApprox())
     lb = fill(-100.0, 2)
@@ -162,5 +192,24 @@ end
         end
    end
 end
-# @testset "Sparse LaplaceApprox" begin
-# end
+
+@testset "Sparse LaplaceApprox" begin
+    N = 100
+    μ = ones(N)
+    σ = 1.5
+    d = MvNormal(μ, σ^2 * I)
+    ld(u, p) = logpdf(MvNormal(p.μ, p.σ * I), u)
+    iv = 50:60
+    iw = setdiff(1:N, iv)
+    u = randn(N)
+    v = u[iv]
+    w = u[iw]
+    p = (;μ, σ)
+
+    mldd = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(), hess_autosparse=:none)
+    mlds = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(), hess_autosparse=:sparsitydetection)
+    @test issparse(cached_hessian(mlds))
+    @test ! issparse(cached_hessian(mldd))
+    @test mlds(v, p) ≈ mldd(v, p)
+    @test all(Matrix(cached_hessian(mlds)) .≈ cached_hessian(mldd))
+end

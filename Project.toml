@@ -22,7 +22,7 @@ ForwardDiff = "0.10"
 HCubature = "1"
 NLSolversBase = "7"
 Optim = "1"
-SparseDiffTools = "1"
+SparseDiffTools = ">= 1.25.0"
 SparsityDetection = "0.3"
 
 [extras]

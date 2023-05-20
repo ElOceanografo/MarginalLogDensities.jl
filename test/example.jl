@@ -40,7 +40,8 @@ u0 = ones(length(utrue))
 iθ = 1:4
 ix = 5:length(u0)
 θ0 = u0[iθ]
-mld = MarginalLogDensity(loglik, u0, ix, LaplaceApprox())
+mld = MarginalLogDensity(loglik, u0, ix, p, LaplaceApprox(), hess_autosparse=:forwarddiff)
+@code_warntype mld(θ0, p)
 @btime mld($θ0, $p) # 5.3 μs
 @profview for i in 1:1000
     mld(θ0, p)

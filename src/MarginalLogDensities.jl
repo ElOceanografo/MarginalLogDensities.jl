@@ -234,33 +234,3 @@ function Optim.optimize(mld::MarginalLogDensity, init_v, data=(), args...; kwarg
 end
 
 end
-
-# Was using this for testing/troubleshooting, will probably delete later
-# """
-#     `num_hessian_sparsity(f, x, [δ=1.0])`
-#
-# Calculate the sparsity pattern of the Hessian matrix of function `f`. This is a brute-force
-# approach, but more robust than the one in SparsityDetection
-# """
-# function num_hessian_sparsity(f, x, δ=1.0)
-#     N = length(x)
-#     g(x) = ForwardDiff.gradient(f, x)
-#     y = g(x)
-#     ii = Int[]
-#     jj = Int[]
-#     vv = Float64[]
-#     for j in 1:N
-#         x[j] += δ
-#         yj = g(x)
-#         di = findall(.! (yj .≈ y))
-#         for i in di
-#             push!(jj, j)
-#             push!(ii, i)
-#             push!(vv, 1.0)
-#         end
-#         x[j] -= δ
-#     end
-#     return sparse(ii, jj, vv)
-# end
-
-

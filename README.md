@@ -15,21 +15,25 @@ be any kind of object you'd like (a `Vector`, `NamedTuple`, `DataFrame`, etc.).
 
 
 ```julia
-using MarginalLogDensities
-data = ...
+using MarginalLogDensities, Distributions
 
-function loglik(u, data)
-    ...
+N = 3
+σ = 1.5
+dist = MvNormal(σ^2 * I(3))
+data = (N=N, dist=dist)
+
+function logdensity(u, data)
+   return logpdf(data.dist, u) 
 end
 ```
 
 To calculate the 
 
 ```julia
-u0 = ...
-iw = ...
-data = (...)
-marginal_loglik = MarginalLogDensity(loglik, u0, ix, data)
+u0 = rand(N)
+iw = [1, 3]
+iv = [2]
+marginal_loglik = MarginalLogDensity(logdensity, u0, iw, data)
 ```
 
 Here `u` is a vector of all parameters, 
@@ -47,18 +51,20 @@ interested in, rather than the entire set `u`. The subset of `u` that you're
 *not* explicitly interested in, `w`, is integrated out automatically.
 
 ```julia
-initial_v = [...]
+initial_v = [randn()]
 marginal_loglik(initial_v, data)
 ```
 
 (As an aside, you also can re-run the same `MarginalLogDensity` with different `data`.)
 
-The point of doing all this was probably to find an optimal set of parameters `u` for
-your data, so let's do that. We load Optim.jl and call `optimize` on the anonymous
-function `v -> marginal_loglik(v, data)`. By default, this uses the Nelder-Mead
-algorithm.
-```
+The point of doing all this was probably to find an optimal set of parameters `v` for
+your data. This package defines a method for `Optim.optimize` that 
+works directly with a `MarginalLogDensity` object, making  optimization easy. Just pass
+it your marginalized function, a vector of starting values for `v`, and your data (if
+required).
+
+```julia
 using Optim
-fit = optimize(v -> marginal_loglik(v, data), initial_v)
-theta_hat = fit.minimizer
+fit = optimize(marginal_loglik, initial_v, data)
+fit.minimizer
 ```

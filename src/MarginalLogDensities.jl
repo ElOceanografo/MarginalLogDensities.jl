@@ -229,6 +229,10 @@ function _marginalize(mld, v, p, method::Cubature, verbose)
     return log(integral)
 end
 
+function Optim.optimize(mld::MarginalLogDensity, init_v, data=(), args...; kwargs...)
+    return optimize(v -> -mld(v, data), init_v, args...; kwargs...)
+end
+
 end
 
 # Was using this for testing/troubleshooting, will probably delete later

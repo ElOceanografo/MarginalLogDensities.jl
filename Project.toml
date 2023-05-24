@@ -28,7 +28,7 @@ ForwardDiff = "0.10"
 HCubature = "1"
 NLSolversBase = "7"
 Optim = "1"
-SparseDiffTools = "1"
+SparseDiffTools = "2"
 SparsityDetection = "0.3"
 julia = "1"
 

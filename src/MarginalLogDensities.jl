@@ -172,11 +172,22 @@ function (mld::MarginalLogDensity)(v::AbstractVector{T}, data; verbose=false) wh
     return _marginalize(mld, v, data, mld.method, verbose)
 end
 
+"""Return the full dimension of the marginalized function, i.e. `length(u)` """
 dimension(mld::MarginalLogDensity) = length(mld.u)
+
+"""Return the indices of the marginalized variables, `iw`, in `u` """
 imarginal(mld::MarginalLogDensity) = mld.iw
+
+"""Return the indices of the non-marginalized variables, `iv`, in `u` """
 ijoint(mld::MarginalLogDensity) = mld.iv
+
+"""Return the number of marginalized variables."""
 nmarginal(mld::MarginalLogDensity) = length(mld.iw)
+
+"""Return the number of non-marginalized variables."""
 njoint(mld::MarginalLogDensity) = length(mld.iv)
+
+"""Get the value of the cached Hessian matrix."""
 cached_hessian(mld::MarginalLogDensity) = mld.F.hess_prototype
 
 """

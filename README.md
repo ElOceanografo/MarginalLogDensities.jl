@@ -33,7 +33,7 @@ To calculate the
 u0 = rand(N)
 iw = [1, 3]
 iv = [2]
-marginal_loglik = MarginalLogDensity(logdensity, u0, iw, data)
+marginal_logdensity = MarginalLogDensity(logdensity, u0, iw, data)
 ```
 
 Here `u` is a vector of all parameters, 
@@ -52,7 +52,7 @@ interested in, rather than the entire set `u`. The subset of `u` that you're
 
 ```julia
 initial_v = [randn()]
-marginal_loglik(initial_v, data)
+marginal_logdensity(initial_v, data)
 ```
 
 (As an aside, you also can re-run the same `MarginalLogDensity` with different `data`.)
@@ -65,6 +65,6 @@ required).
 
 ```julia
 using Optim
-fit = optimize(marginal_loglik, initial_v, data)
+fit = optimize(marginal_logdensity, initial_v, data)
 fit.minimizer
 ```

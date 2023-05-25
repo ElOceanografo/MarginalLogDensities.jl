@@ -44,19 +44,10 @@ struct LaplaceApprox{TA, TT, TS} <: AbstractMarginalizer
     opt_func_kwargs::TT
 end
 
-# function LaplaceApprox(sparsehess=false, adtype=AutoForwardDiff(), opt_func_kwargs=(;))
 function LaplaceApprox(solver=LBFGS(); adtype=Optimization.AutoForwardDiff(),
     opt_func_kwargs...)
     return LaplaceApprox(solver, adtype, opt_func_kwargs)
 end
-
-#=
-in MarginalLogDensity constructor, can then do:
-    if sparse
-    # Hcolors, Hsparsity = get_hessian_sparsity(logdensity, u, forwarddiff_sparsity)
-    f(w, p2) = -logdensity(merge_parameters(p2.v, w, iv, iw), p2.p)
-    F = OptimizationFunction(f, method.adtype; method.kwargs...)
-=#
 
 struct Cubature{TA, TT, TS, T} <: AbstractMarginalizer
     solver::TS
@@ -72,26 +63,58 @@ function Cubature(; solver=LBFGS(), adtype=Optimization.AutoForwardDiff(),
 end
 
 """
-    `MarginalLogDensity(logdensity, n, imarginal, [method=LaplaceApprox()])`
+    `MarginalLogDensity(logdensity, u, iw, data, [method=LaplaceApprox()])`
 
 Construct a callable object which wraps the function `logdensity` and
 integrates over a subset of its arguments.
-* `logdensity` : function with signature `(u, p)` returning a positive
-log-probability (e.g. a log-pdf, log-likelihood, or log-posterior).
-* `imarginal` : Vector of indices indicating which arguments to `logdensity` to marginalize
-* `method` : How to perform the marginalization.  Defaults to `LaplaceApprox()`; `Cubature()`
-is also available.
 
-If `length(imarginal) == m`, then the constructed `MarginalLogDensity` object  `mld`
-can be called as `mld(θ)`, where `θ` is a vector with length `n-m`.  It can also be called
-as `mld(u, θ)`, where `u` is a length-`m` vector of the marginalized variables.  In this
-case, the return value is the same as the full conditional `logdensity` with `u` and `θ`
+# Arguments
+- `logdensity` : function with signature `(u, data)` returning a positive
+log-probability (e.g. a log-pdf, log-likelihood, or log-posterior). In this
+function, `u` is a vector of variable parameters and `data` is an object (Array,
+NamedTuple, or whatever) that contains data and/or fixed parameters.
+- `u` : Vector of initial values for the parameter vector.
+- `iw` : Vector of indices indicating which elements of `u` should be marginalized.
+- `data=()` : Optional argument
+- `method` : How to perform the marginalization.  Defaults to `LaplaceApprox()`; `Cubature()`
+is also available.
+- `hess_autosparse=:none` : Specifies how to detect sparsity in the Hessian matrix of 
+`logdensity`. Can be `:none`, `:finitediff`` `:forwarddiff`, or `:sparsitydetection`.
+If `:none` (the default), the Hessian is assumed dense and calculated using `ForwardDiff`. 
+Detecting sparsity takes some time and may not be worth it for small problems, but for 
+larger problems it can be extremely worth it.
+
+The resulting `MarginalLogDensity` object  `mld` can then be called like a function
+as `mld(v, data)`, where `v` is the subset of the full parameter vector `u` which is
+*not* indexed by `iw`.  If `length(u) == n` and `length(iw) == m`, then `length(v) == n-m`.
+
+# Examples
+```julia-repl
+julia> using MarginalLogDensities, Distributions
+
+julia> N = 4
+
+julia> dist = MvNormal(I(3))
+
+julia> data = (N=N, dist=dist)
+
+julia> function logdensity(u, data) # arbitrary simple density function
+           return logpdf(data.dist, u) 
+       end
+
+julia> u0 = rand(N)
+
+julia> mld = MarginalLogDensity(logdensity, u0, [1, 3], data)
+
+julia> mld(rand(2), data)
+
+```
 """
-struct MarginalLogDensity{TF, TU<:AbstractVector, TP, TV<:AbstractVector, TW<:AbstractVector, 
+struct MarginalLogDensity{TF, TU<:AbstractVector, TD, TV<:AbstractVector, TW<:AbstractVector, 
         TF1<:OptimizationFunction, TM<:AbstractMarginalizer}
     logdensity::TF
     u::TU
-    p::TP
+    data::TD
     iv::TV
     iw::TW
     F::TF1
@@ -117,13 +140,13 @@ function get_hessian_prototype(f, w, p2, autosparsity)
     return hess_prototype
 end
 
-# autosparsity = :none, :finitediff :forwarddiff, :sparsitydetection, :symbolics
-function MarginalLogDensity(logdensity, u, iw, p=(), method=LaplaceApprox(); hess_autosparse=:none)
+# hess_autosparse = :none, :finitediff :forwarddiff, :sparsitydetection, (:symbolics)
+function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); hess_autosparse=:none)
     n = length(u)
     iv = setdiff(1:n, iw)
     w = u[iw]
     v = u[iv]
-    p2 = (p=p, v=v)
+    p2 = (p=data, v=v)
     f(w, p2) = -logdensity(merge_parameters(p2.v, w, iv, iw), p2.p)
     hess_prototype = get_hessian_prototype(f, w, p2, hess_autosparse)
     if hess_autosparse != :none
@@ -136,7 +159,7 @@ function MarginalLogDensity(logdensity, u, iw, p=(), method=LaplaceApprox(); hes
         F = OptimizationFunction(f, method.adtype; hess_prototype=hess_prototype,
             hess = hess, method.opt_func_kwargs...)
     end
-    return MarginalLogDensity(logdensity, u, p, iv, iw, F, method)
+    return MarginalLogDensity(logdensity, u, data, iv, iw, F, method)
 end
 
 function Base.show(io::IO, mld::MarginalLogDensity)
@@ -145,8 +168,8 @@ function Base.show(io::IO, mld::MarginalLogDensity)
     write(io, str)
 end
 
-function (mld::MarginalLogDensity)(v::AbstractVector{T}, p; verbose=false) where T
-    return _marginalize(mld, v, p, mld.method, verbose)
+function (mld::MarginalLogDensity)(v::AbstractVector{T}, data; verbose=false) where T
+    return _marginalize(mld, v, data, mld.method, verbose)
 end
 
 dimension(mld::MarginalLogDensity) = length(mld.u)
@@ -186,8 +209,8 @@ function optimize_marginal!(mld, p2)
     return sol
 end
 
-function _marginalize(mld, v, p, method::LaplaceApprox, verbose)
-    p2 = (;p, v)
+function _marginalize(mld, v, data, method::LaplaceApprox, verbose)
+    p2 = (; p=data, v)
     verbose && println("Finding mode...")
     sol = optimize_marginal!(mld, p2)
     verbose && println("Calculating hessian...")
@@ -210,8 +233,8 @@ function hessdiag(f, x::Vector{T}) where T
     return (g1 .- g2) ./ 2Δx
 end
 
-function _marginalize(mld, v, p, method::Cubature, verbose)
-    p2 = (;p, v)
+function _marginalize(mld, v, data, method::Cubature, verbose)
+    p2 = (; p=data, v)
     if method.lower == nothing || method.upper == nothing
         sol = optimize_marginal!(mld, p2)
         wopt = sol.u

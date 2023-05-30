@@ -7,6 +7,7 @@ using LinearAlgebra, SparseArrays
 using HCubature
 using Random
 using SparseDiffTools
+using ChainRulesTestUtils
 
 N = 3
 μ = ones(N)
@@ -48,6 +49,7 @@ w = u[iw]
             end
         end
     end
+    
     @testset "Marginalizers" begin
         adtype = Optimization.AutoForwardDiff()
         solver = BFGS()
@@ -62,6 +64,14 @@ w = u[iw]
         @test_nowarn Cubature(upper = fill(-1, 5), lower=fill(1, 5))
         @test_nowarn Cubature(upper = fill(-1, 5), lower=fill(1, 5), solver=solver)
     end
+end
+
+@testset "Custom ChainRules" begin
+    v = fill(1, 3)
+    w = fill(2, 4)
+    iv = 1:3
+    iw = 4:7
+    test_rrule(merge_parameters, v, w, iv, iw)
 end
 
 @testset "Sparsity detection" begin

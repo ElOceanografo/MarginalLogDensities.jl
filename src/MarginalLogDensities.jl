@@ -5,6 +5,7 @@ using OptimizationOptimJL
 using LinearAlgebra
 using SuiteSparse
 using SparseArrays
+using ChainRulesCore
 using HCubature
 using Distributions
 using SparsityDetection
@@ -37,6 +38,12 @@ export MarginalLogDensity,
 
 abstract type AbstractMarginalizer end
 
+"""
+    `LaplaceApprox([solver=LGFGS() [; adtype=Optimization.AutoForwardDiff(), opt_func_kwargs...]])
+
+Construct a `LaplaceApprox` marginalizer to integrate out marginal variables via
+the Laplace approximation. 
+"""
 struct LaplaceApprox{TA, TT, TS} <: AbstractMarginalizer
     # sparsehess::Bool
     solver::TS
@@ -201,7 +208,17 @@ function merge_parameters(v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw) 
     u[iw] .= w
     return u
 end
-# TODO: add ChainRules for merge_parameters so it works w/ Zygote
+
+function ChainRulesCore.rrule(::typeof(merge_parameters), 
+        v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw) where {T1,T2}
+    u = merge_parameters(v, w, iv, iw)
+
+    function merge_parameters_pullback(ubar)
+        return NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent()
+    end
+
+    return u, merge_parameters_pullback
+end
 
 
 """

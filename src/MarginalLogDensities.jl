@@ -212,11 +212,11 @@ end
 function ChainRulesCore.rrule(::typeof(merge_parameters), 
         v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw) where {T1,T2}
     u = merge_parameters(v, w, iv, iw)
-
     function merge_parameters_pullback(ubar)
-        return NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent()
+        vbar = ubar[iv]
+        wbar = ubar[iw]
+        return (NoTangent(), vbar, wbar, NoTangent(), NoTangent())
     end
-
     return u, merge_parameters_pullback
 end
 

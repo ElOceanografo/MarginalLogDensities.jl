@@ -1,20 +1,17 @@
 module MarginalLogDensities
-
-using Optim
-using ForwardDiff
+using ForwardDiff, FiniteDiff, ReverseDiff, Zygote
+using Optimization
+using OptimizationOptimJL
 using LinearAlgebra
-using SuiteSparse
 using SparseArrays
+using ChainRulesCore
 using HCubature
 using Distributions
-using SparsityDetection
+# using SparsityDetection
 # using Symbolics
 using SparseDiffTools
-using NLSolversBase
-
 
 export MarginalLogDensity,
-    HessianConfig,
     AbstractMarginalizer,
     LaplaceApprox,
     Cubature,
@@ -23,204 +20,265 @@ export MarginalLogDensity,
     ijoint,
     nmarginal,
     njoint,
+    cached_hessian,
     merge_parameters,
-    split_parameters
+    split_parameters,
+    optimize_marginal!,
+    hessdiag,
+    get_hessian_sparsity
+
+# can't seem to precompile these functions
+# auto_ad_hess(x::Optimization.AutoFiniteDiff) = FiniteDiff.finite_difference_hessian!
+# auto_ad_hess(x::Optimization.AutoForwardDiff) = ForwardDiff.hessian!
+# auto_ad_hess(x::Optimization.AutoReverseDiff) = ReverseDiff.hessian!
+# auto_ad_hess(x::Optimization.AutoZygote) = (H, f, x) -> first(Zygote.hessian!(H, f, x))
 
 abstract type AbstractMarginalizer end
 
-struct LaplaceApprox <: AbstractMarginalizer end
+"""
+    `LaplaceApprox([solver=LBFGS() [; adtype=Optimization.AutoForwardDiff(), opt_func_kwargs...]])
 
-struct Cubature{T} <: AbstractMarginalizer
-    upper::AbstractVector{T}
-    lower::AbstractVector{T}
+Construct a `LaplaceApprox` marginalizer to integrate out marginal variables via
+the Laplace approximation. 
+"""
+struct LaplaceApprox{TA, TT, TS} <: AbstractMarginalizer
+    # sparsehess::Bool
+    solver::TS
+    adtype::TA
+    opt_func_kwargs::TT
+end
+
+function LaplaceApprox(solver=LBFGS(); adtype=Optimization.AutoForwardDiff(),
+    opt_func_kwargs...)
+    return LaplaceApprox(solver, adtype, opt_func_kwargs)
+end
+
+struct Cubature{TA, TT, TS, T} <: AbstractMarginalizer
+    solver::TS
+    adtype::TA
+    opt_func_kwargs::TT
+    upper::T
+    lower::T
+end
+
+function Cubature(; solver=LBFGS(), adtype=Optimization.AutoForwardDiff(), 
+    upper=nothing, lower=nothing, opt_func_kwargs...)
+    return Cubature(solver, adtype, opt_func_kwargs, promote(upper, lower)...)
 end
 
 """
-    `MarginalLogDensity(logdensity, n, imarginal, [method=LaplaceApprox()])`
+    `MarginalLogDensity(logdensity, u, iw, data, [method=LaplaceApprox()])`
 
 Construct a callable object which wraps the function `logdensity` and
 integrates over a subset of its arguments.
-* `logdensity` : function taking a vector of `n` parameters and returning a positive
-log-probability (e.g. a log-pdf, log-likelihood, or log-posterior).
-* `imarginal` : Vector of indices indicating which arguments to `logdensity` to marginalize
-* `method` : How to perform the marginalization.  Defaults to `LaplaceApprox()`; `Cubature()`
+
+# Arguments
+- `logdensity` : function with signature `(u, data)` returning a positive
+log-probability (e.g. a log-pdf, log-likelihood, or log-posterior). In this
+function, `u` is a vector of variable parameters and `data` is an object (Array,
+NamedTuple, or whatever) that contains data and/or fixed parameters.
+- `u` : Vector of initial values for the parameter vector.
+- `iw` : Vector of indices indicating which elements of `u` should be marginalized.
+- `data=()` : Optional argument
+- `method` : How to perform the marginalization.  Defaults to `LaplaceApprox()`; `Cubature()`
 is also available.
+- `hess_autosparse=:none` : Specifies how to detect sparsity in the Hessian matrix of 
+`logdensity`. Can be `:none`, `:finitediff`` `:forwarddiff`, or `:sparsitydetection`.
+If `:none` (the default), the Hessian is assumed dense and calculated using `ForwardDiff`. 
+Detecting sparsity takes some time and may not be worth it for small problems, but for 
+larger problems it can be extremely worth it.
 
-If `length(imarginal) == m`, then the constructed `MarginalLogDensity` object it `mld`
-can be called as `mld(θ)`, where `θ` is a vector with length `n-m`.  It can also be called
-as `mld(u, θ)`, where `u` is a length-`m` vector of the marginalized variables.  In this
-case, the return value is the same as the full conditional `logdensity` with `u` and `θ`
+The resulting `MarginalLogDensity` object  `mld` can then be called like a function
+as `mld(v, data)`, where `v` is the subset of the full parameter vector `u` which is
+*not* indexed by `iw`.  If `length(u) == n` and `length(iw) == m`, then `length(v) == n-m`.
+
+# Examples
+```julia-repl
+julia> using MarginalLogDensities, Distributions
+
+julia> N = 4
+
+julia> dist = MvNormal(I(3))
+
+julia> data = (N=N, dist=dist)
+
+julia> function logdensity(u, data) # arbitrary simple density function
+           return logpdf(data.dist, u) 
+       end
+
+julia> u0 = rand(N)
+
+julia> mld = MarginalLogDensity(logdensity, u0, [1, 3], data)
+
+julia> mld(rand(2), data)
+
+```
 """
-struct MarginalLogDensity{TI<:Integer, TM<:AbstractMarginalizer,
-        TV<:AbstractVector{TI}, TF, THP}
+struct MarginalLogDensity{TF, TU<:AbstractVector, TD, TV<:AbstractVector, TW<:AbstractVector, 
+        TF1<:OptimizationFunction, TM<:AbstractMarginalizer}
     logdensity::TF
-    n::TI
-    imarginal::TV
-    ijoint::TV
+    u::TU
+    data::TD
+    iv::TV
+    iw::TW
+    F::TF1
     method::TM
-    hessconfig::THP
 end
 
-function MarginalLogDensity(logdensity, n, im, method=LaplaceApprox(), forwarddiff_sparsity=false)
-    ij = setdiff(1:n, im)
-    hessconfig = HessianConfig(logdensity, im, ij, forwarddiff_sparsity)
-    return MarginalLogDensity(logdensity, n, im, ij, method, hessconfig)
-end
-
-
-# Was using this for testing/troubleshooting, will probably delete later
-# """
-#     `num_hessian_sparsity(f, x, [δ=1.0])`
-#
-# Calculate the sparsity pattern of the Hessian matrix of function `f`. This is a brute-force
-# approach, but more robust than the one in SparsityDetection
-# """
-# function num_hessian_sparsity(f, x, δ=1.0)
-#     N = length(x)
-#     g(x) = ForwardDiff.gradient(f, x)
-#     y = g(x)
-#     ii = Int[]
-#     jj = Int[]
-#     vv = Float64[]
-#     for j in 1:N
-#         x[j] += δ
-#         yj = g(x)
-#         di = findall(.! (yj .≈ y))
-#         for i in di
-#             push!(jj, j)
-#             push!(ii, i)
-#             push!(vv, 1.0)
-#         end
-#         x[j] -= δ
-#     end
-#     return sparse(ii, jj, vv)
-# end
-
-
-
-struct HessianConfig{THS, THC}
-    Hsparsity::THS
-    Hcolors::THC
-end
-
-function HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity=false)
-    x = ones(length(imarginal) + length(ijoint))
-    if forwarddiff_sparsity
-        println("Detecting Hessian sparsity via ForwardDiff...")
-        H = ForwardDiff.hessian(logdensity, x)
-        Hsparsity = sparse(H)[imarginal, imarginal] .!= 0
+function get_hessian_prototype(f, w, p2, autosparsity)
+    if autosparsity == :finitediff 
+        H = FiniteDiff.finite_difference_hessian(w -> f(w, p2), w)
+        hess_prototype = sparse(H) 
+    elseif autosparsity == :forwarddiff
+        H = ForwardDiff.hessian(w -> f(w, p2), w)
+        hess_prototype = sparse(H)
+    # elseif autosparsity == :sparsitydetection
+        # hess_prototype = SparsityDetection.hessian_sparsity(w -> f(w, p2), w) .* one(eltype(w))
+    # elseif autosparsity == :symbolics
+    #     ...
+    elseif autosparsity == :none
+        hess_prototype = ones(eltype(w), length(w), length(w))
     else
-        println("Detecting Hessian sparsity via SparsityDetection...")
-        Hsparsity = hessian_sparsity(logdensity, x)[imarginal, imarginal]
+        error("Unsupported method for hessian sparsity detection: $(autosparsity)")
     end
-    Hcolors = matrix_colors(Hsparsity)
-    return HessianConfig(Hsparsity, Hcolors)
+    return hess_prototype
 end
 
-function MarginalLogDensity(logdensity::Function, n::TI,
-        imarginal::AbstractVector{TI}; method=LaplaceApprox(), forwarddiff_sparsity=false) where {TI<:Integer}
-    ijoint = setdiff(1:n, imarginal)
-    hessconfig = HessianConfig(logdensity, imarginal, ijoint, forwarddiff_sparsity)
-    mld  = MarginalLogDensity(logdensity, n, imarginal, ijoint, method, hessconfig)
-    return mld
-end
-
-dimension(mld::MarginalLogDensity) = mld.n
-imarginal(mld::MarginalLogDensity) = mld.imarginal
-ijoint(mld::MarginalLogDensity) = mld.ijoint
-nmarginal(mld::MarginalLogDensity) = length(mld.imarginal)
-njoint(mld::MarginalLogDensity) = length(mld.ijoint)
-
-function merge_parameters(θmarg::AbstractVector{T1}, θjoint::AbstractVector{T2}, imarg, ijoint) where {T1,T2}
-    N = length(θmarg) + length(θjoint)
-    θ = Vector{promote_type(T1, T2)}(undef, N)
-    θ[imarg] .= θmarg
-    θ[ijoint] .= θjoint
-    return θ
-end
-
-split_parameters(θ, imarg, ijoint) = (θ[imarg], θ[ijoint])
-
-function (mld::MarginalLogDensity)(θmarg::AbstractVector{T1}, θjoint::AbstractVector{T2}) where {T1, T2}
-    θ = merge_parameters(θmarg, θjoint, imarginal(mld), ijoint(mld))
-    return mld.logdensity(θ)
-end
-
-function (mld::MarginalLogDensity)(θjoint::AbstractVector{T}, verbose=false) where T
-    integral = _marginalize(mld, θjoint, mld.method, verbose)
-    return integral
-end
-
-############################################################################################
-# This section implements a `logabsdet` method for sparse LU decompositions, so we can
-# calculate the Laplace approximation for sparse Hessians.  This is an import from the
-# future; the method will be in the next Julia release but it's copy-pasted in here for now
-# so that this package will work.
-
-# compute the sign/parity of a permutation
-function _signperm(p)
-    n = length(p)
-    result = 0
-    todo = trues(n)
-    while any(todo)
-        k = findfirst(todo)
-        todo[k] = false
-        result += 1 # increment element count
-        j = p[k]
-        while j != k
-            result += 1 # increment element count
-            todo[j] = false
-            j = p[j]
-        end
-        result += 1 # increment cycle count
+# hess_autosparse = :none, :finitediff :forwarddiff, :sparsitydetection, (:symbolics)
+function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); hess_autosparse=:none)
+    n = length(u)
+    iv = setdiff(1:n, iw)
+    w = u[iw]
+    v = u[iv]
+    p2 = (p=data, v=v)
+    f(w, p2) = -logdensity(merge_parameters(p2.v, w, iv, iw), p2.p)
+    hess_prototype = get_hessian_prototype(f, w, p2, hess_autosparse)
+    if hess_autosparse != :none
+        hess_colorvec = matrix_colors(hess_prototype)
+        hess = (H, w, p2) -> numauto_color_hessian!(H, w -> f(w, p2), w, hess_colorvec, hess_prototype)
+        F = OptimizationFunction(f, method.adtype; hess_prototype=hess_prototype, hess_colorvec=hess_colorvec,
+            hess = hess, method.opt_func_kwargs...)
+    else
+        hess = (H, w, p2) -> ForwardDiff.hessian!(H, w -> f(w, p2), w) #auto_ad_hess(method.adtype)(H, u, p)
+        F = OptimizationFunction(f, method.adtype; hess_prototype=hess_prototype,
+            hess = hess, method.opt_func_kwargs...)
     end
-    return ifelse(isodd(result), -1, 1)
+    return MarginalLogDensity(logdensity, u, data, iv, iw, F, method)
 end
 
-function LinearAlgebra.logabsdet(F::SuiteSparse.UMFPACK.UmfpackLU{T, TI}) where {T<:Union{Float64,ComplexF64}, TI<:Integer} # return log(abs(det)) and sign(det)
-    n = LinearAlgebra.checksquare(F)
-    issuccess(F) || return log(zero(real(T))), zero(T)
-    U = F.U
-    Rs = F.Rs
-    p = F.p
-    q = F.q
-    s = _signperm(p)*_signperm(q)*one(real(T))
-    P = one(T)
-    abs_det = zero(real(T))
-    @inbounds for i in 1:n
-        dg_ii = U[i, i] / Rs[i]
-        P *= sign(dg_ii)
-        abs_det += log(abs(dg_ii))
+function Base.show(io::IO, mld::MarginalLogDensity)
+    T = typeof(mld.method).name.name
+    str = "MarginalLogDensity of function $(repr(mld.logdensity))\nIntegrating $(length(mld.iw))/$(length(mld.u)) variables via $(T)"
+    write(io, str)
+end
+
+function (mld::MarginalLogDensity)(v::AbstractVector{T}, data; verbose=false) where T
+    return _marginalize(mld, v, data, mld.method, verbose)
+end
+
+"""Return the full dimension of the marginalized function, i.e. `length(u)` """
+dimension(mld::MarginalLogDensity) = length(mld.u)
+
+"""Return the indices of the marginalized variables, `iw`, in `u` """
+imarginal(mld::MarginalLogDensity) = mld.iw
+
+"""Return the indices of the non-marginalized variables, `iv`, in `u` """
+ijoint(mld::MarginalLogDensity) = mld.iv
+
+"""Return the number of marginalized variables."""
+nmarginal(mld::MarginalLogDensity) = length(mld.iw)
+
+"""Return the number of non-marginalized variables."""
+njoint(mld::MarginalLogDensity) = length(mld.iv)
+
+"""Get the value of the cached Hessian matrix."""
+cached_hessian(mld::MarginalLogDensity) = mld.F.hess_prototype
+
+"""
+Splice together the estimated (fixed) parameters `v` and marginalized (random) parameters
+`w` into the single parameter vector `u`, based on their indices `iv` and `iw`.
+"""
+function merge_parameters(v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw) where {T1,T2}
+    N = length(v) + length(w)
+    u = Vector{promote_type(T1, T2)}(undef, N)
+    u[iv] .= v
+    u[iw] .= w
+    return u
+end
+
+function ChainRulesCore.rrule(::typeof(merge_parameters), 
+        v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw) where {T1,T2}
+    u = merge_parameters(v, w, iv, iw)
+    function merge_parameters_pullback(ubar)
+        vbar = ubar[iv]
+        wbar = ubar[iw]
+        return (NoTangent(), vbar, wbar, NoTangent(), NoTangent())
     end
-    return abs_det, s * P
-end
-############################################################################################
-
-function _marginalize(mld::MarginalLogDensity, θjoint::AbstractVector{T},
-        method::LaplaceApprox, verbose) where T
-    N = nmarginal(mld)
-    θmarginal0 = ones(T, N)
-    f = (θmarginal) -> -mld(θmarginal, θjoint)
-    gconfig = ForwardDiff.GradientConfig(f, θmarginal0)
-    g! = (G, x) -> ForwardDiff.gradient!(G, f, x, gconfig)
-    hconfig = ForwardColorHesCache(f, θmarginal0, mld.hessconfig.Hcolors, mld.hessconfig.Hsparsity, g!)
-    h! = (H, x) -> numauto_color_hessian!(H, f, x, hconfig)
-    H0 = numauto_color_hessian(f, θmarginal0, hconfig)
-    td = TwiceDifferentiable(f, g!, h!, θmarginal0, zero(T), zeros(T, N), H0)
-
-    verbose && println("Optimizing...")
-    opt = optimize(td, θmarginal0)
-    verbose && println("Calculating Hessian at mode...")
-    h!(H0, opt.minimizer)
-    verbose && println("Laplace approximating...")
-    integral = -opt.minimum + 0.5 * (log((2π)^N) - logdet(H0))
-    return integral
+    return u, merge_parameters_pullback
 end
 
-function _marginalize(mld::MarginalLogDensity, θjoint, method::Cubature, verbose)
-    f = θmarginal -> exp(mld(θmarginal, θjoint))
-    int, err = hcubature(f, method.lower, method.upper)
-    return log(int)
+
+"""
+Split the vector of all parameters `u` into its estimated (fixed) components `v` and
+marginalized (random) components `w`, based on their indices `iv` and `iw`.
+components
+"""
+split_parameters(u, iv, iw) = (u[iv], u[iw])
+
+function optimize_marginal!(mld, p2)
+    w0 = mld.u[mld.iw]
+    prob = OptimizationProblem(mld.F, w0, p2)
+    sol = solve(prob, mld.method.solver)
+    wopt = sol.u
+    mld.u[mld.iw] = wopt
+    return sol
 end
 
-end # module
+function _marginalize(mld, v, data, method::LaplaceApprox, verbose)
+    p2 = (; p=data, v)
+    verbose && println("Finding mode...")
+    sol = optimize_marginal!(mld, p2)
+    verbose && println("Calculating hessian...")
+    # H = -ForwardDiff.hessian(w -> mld.F(w, p2), sol.u)
+    H = mld.F.hess(mld.F.hess_prototype, sol.u, p2)
+    verbose && println("Integrating...")
+    nw = length(mld.iw)
+    integral = -sol.objective + (nw/2)* log(2π) - 0.5logabsdet(H)[1]
+    verbose && println("Done!")
+    return integral#, sol 
+end
+
+function hessdiag(f, x::Vector{T}) where T
+    Δx = sqrt(eps(T))
+    x .+= Δx
+    g1 = ForwardDiff.gradient(f, x)
+    x .-= 2Δx
+    g2 = ForwardDiff.gradient(f, x)
+    x .+= Δx # reset u
+    return (g1 .- g2) ./ 2Δx
+end
+
+function _marginalize(mld, v, data, method::Cubature, verbose)
+    p2 = (; p=data, v)
+    if method.lower == nothing || method.upper == nothing
+        sol = optimize_marginal!(mld, p2)
+        wopt = sol.u
+        h = hessdiag(w -> mld.F(w, p2), wopt)
+        se = 1 ./ sqrt.(h)
+        upper = wopt .+ 6se
+        lower = wopt .- 6se
+    else
+        lower = method.lower
+        upper = method.upper
+    end
+    println(upper)
+    println(lower)
+    integral, err = hcubature(w -> exp(-mld.F(w, p2)), lower, upper)
+    return log(integral)
+end
+
+function Optim.optimize(mld::MarginalLogDensity, init_v, data=(), args...; kwargs...)
+    return optimize(v -> -mld(v, data), init_v, args...; kwargs...)
+end
+
+end

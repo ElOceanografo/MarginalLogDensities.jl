@@ -94,7 +94,7 @@ end
         return ncorrect == size(H, 1)^2
     end
 
-    for autosparsity in [:none, :finitediff, :forwarddiff, :sparsitydetection]#, :symbolics]
+    for autosparsity in [:none, :finitediff, :forwarddiff]#, :sparsitydetection]#, :symbolics]
         hess_prototype = MarginalLogDensities.get_hessian_prototype(f, u, p, autosparsity)
         @test eltype(hess_prototype) == eltype(u)
         @test size(hess_prototype, 1) == size(hess_prototype, 2)
@@ -217,7 +217,7 @@ end
     p = (;μ, σ)
 
     mldd = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(), hess_autosparse=:none)
-    mlds = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(), hess_autosparse=:sparsitydetection)
+    mlds = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(), hess_autosparse=:forwarddiff)
     @test issparse(cached_hessian(mlds))
     @test ! issparse(cached_hessian(mldd))
     @test mlds(v, p) ≈ mldd(v, p)

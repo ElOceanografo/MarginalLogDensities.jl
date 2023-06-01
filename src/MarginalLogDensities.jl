@@ -3,16 +3,13 @@ using ForwardDiff, FiniteDiff, ReverseDiff, Zygote
 using Optimization
 using OptimizationOptimJL
 using LinearAlgebra
-using SuiteSparse
 using SparseArrays
 using ChainRulesCore
 using HCubature
 using Distributions
-using SparsityDetection
+# using SparsityDetection
 # using Symbolics
 using SparseDiffTools
-using NLSolversBase
-
 
 export MarginalLogDensity,
     AbstractMarginalizer,
@@ -39,7 +36,7 @@ export MarginalLogDensity,
 abstract type AbstractMarginalizer end
 
 """
-    `LaplaceApprox([solver=LGFGS() [; adtype=Optimization.AutoForwardDiff(), opt_func_kwargs...]])
+    `LaplaceApprox([solver=LBFGS() [; adtype=Optimization.AutoForwardDiff(), opt_func_kwargs...]])
 
 Construct a `LaplaceApprox` marginalizer to integrate out marginal variables via
 the Laplace approximation. 
@@ -135,8 +132,8 @@ function get_hessian_prototype(f, w, p2, autosparsity)
     elseif autosparsity == :forwarddiff
         H = ForwardDiff.hessian(w -> f(w, p2), w)
         hess_prototype = sparse(H)
-    elseif autosparsity == :sparsitydetection
-        hess_prototype = SparsityDetection.hessian_sparsity(w -> f(w, p2), w) .* one(eltype(w))
+    # elseif autosparsity == :sparsitydetection
+        # hess_prototype = SparsityDetection.hessian_sparsity(w -> f(w, p2), w) .* one(eltype(w))
     # elseif autosparsity == :symbolics
     #     ...
     elseif autosparsity == :none

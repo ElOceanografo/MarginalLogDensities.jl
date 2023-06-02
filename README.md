@@ -1,5 +1,7 @@
 # MarginalLogDensities.jl
 
+[![Lifecycle:Experimental](https://img.shields.io/badge/Lifecycle-Experimental-339999)](https://github.com/ElOceanografo/MarginalLogDensities.jl)
+
 This package implements tools for integrating out (marginalizing) parameters
 from log-probability functions, such as likelihoods and posteriors of statistical
 models. This approach is useful for fitting models that incorporate random effects or 

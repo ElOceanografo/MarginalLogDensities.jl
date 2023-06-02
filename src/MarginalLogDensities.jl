@@ -39,7 +39,16 @@ abstract type AbstractMarginalizer end
     `LaplaceApprox([solver=LBFGS() [; adtype=Optimization.AutoForwardDiff(), opt_func_kwargs...]])
 
 Construct a `LaplaceApprox` marginalizer to integrate out marginal variables via
-the Laplace approximation. 
+the Laplace approximation. This method will usually be faster than `Cubature`, especially
+in high dimensions, though it may not be as accurate.
+
+# Arguments
+- `solver=LBFGS()` : Algorithm to use when performing the inner optimization to find the
+mode of the marginalized variables. Can be any algorithm defined in Optim.jl.
+- `adtype=Optimization.AutoForwardDiff()` : Automatic differentiation type to use for the 
+inner optimization. `AutoForwardDiff()` is robust and fast for small problems; for larger
+ones `AutoReverseDiff()` or `AutoZygote()` are likely better.
+- `opt_func_kwargs` : Optional keyword arguments passed on to `Optimization.OptimizationFunction`.
 """
 struct LaplaceApprox{TA, TT, TS} <: AbstractMarginalizer
     # sparsehess::Bool
@@ -53,17 +62,44 @@ function LaplaceApprox(solver=LBFGS(); adtype=Optimization.AutoForwardDiff(),
     return LaplaceApprox(solver, adtype, opt_func_kwargs)
 end
 
-struct Cubature{TA, TT, TS, T} <: AbstractMarginalizer
+"""
+    Cubature([; solver=LBFGS(), adtype=Optimization.AutoForwardDiff(),
+        upper=nothing, lower=nothing, nσ=6; opt_func_kwargs...])
+
+Construct a `Cubature` marginalizer to integrate out marginal variables via
+numerical integration (a.k.a. cubature).
+
+If explicit upper and lower bounds for the integration are not supplied, this marginalizer
+will attempt to select good ones by first optimizing the marginal variables, doing a 
+Laplace approximation at their mode, and then going `nσ` standard deviations away
+on either side, assuming approximate normality.
+
+The integration is performed using `hcubature` from Cubature.jl.
+
+# Arguments
+- `solver=LBFGS()` : Algorithm to use when performing the inner optimization to find the
+mode of the marginalized variables. Can be any algorithm defined in Optim.jl.
+- `adtype=Optimization.AutoForwardDiff()` : Automatic differentiation type to use for the 
+inner optimization. `AutoForwardDiff()` is robust and fast for small problems; for larger
+ones `AutoReverseDiff()` or `AutoZygote()` are likely better.
+- `upper`, `lower` : Optional upper and lower bounds for the numerical integration. If supplied,
+they must be numeric vectors the same length as the marginal variables.
+- `nσ=6.0` : If `upper` and `lower` are not supplied, integrate this many standard deviations
+away from the mode based on a Laplace approximation to the curvature there.
+- `opt_func_kwargs` : Optional keyword arguments passed on to `Optimization.OptimizationFunction`.
+"""
+struct Cubature{TA, TT, TS, TV, T} <: AbstractMarginalizer
     solver::TS
     adtype::TA
     opt_func_kwargs::TT
-    upper::T
-    lower::T
+    upper::TV
+    lower::TV
+    nσ::T
 end
 
 function Cubature(; solver=LBFGS(), adtype=Optimization.AutoForwardDiff(), 
-    upper=nothing, lower=nothing, opt_func_kwargs...)
-    return Cubature(solver, adtype, opt_func_kwargs, promote(upper, lower)...)
+    upper=nothing, lower=nothing, nσ=6.0, opt_func_kwargs...)
+    return Cubature(solver, adtype, opt_func_kwargs, promote(upper, lower)..., nσ)
 end
 
 """
@@ -151,7 +187,6 @@ function get_hessian_prototype(f, w, p2, autosparsity)
     return hess_prototype
 end
 
-# hess_autosparse = :none, :finitediff :forwarddiff, :sparsitydetection, (:symbolics)
 function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); hess_autosparse=:none)
     n = length(u)
     iv = setdiff(1:n, iw)
@@ -272,8 +307,8 @@ function _marginalize(mld, v, data, method::Cubature, verbose)
         wopt = sol.u
         h = hessdiag(w -> mld.F(w, p2), wopt)
         se = 1 ./ sqrt.(h)
-        upper = wopt .+ 6se
-        lower = wopt .- 6se
+        upper = wopt .+ method.nσ * se
+        lower = wopt .- method.nσ * se
     else
         lower = method.lower
         upper = method.upper
@@ -288,4 +323,4 @@ function Optim.optimize(mld::MarginalLogDensity, init_v, data=(), args...; kwarg
     return optimize(v -> -mld(v, data), init_v, args...; kwargs...)
 end
 
-end
+end # module

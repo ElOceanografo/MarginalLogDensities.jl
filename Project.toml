@@ -21,12 +21,16 @@ StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [compat]
+BenchmarkTools = "1"
 ChainRulesCore = "1"
 Distributions = "0.25"
+FiniteDiff = "2"
 ForwardDiff = "0.10"
 HCubature = "1"
 Optim = "1"
+ReverseDiff = "1"
 SparseDiffTools = "2"
+Zygote = "0.6"
 julia = "1.6"
 
 [extras]

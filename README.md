@@ -80,7 +80,9 @@ docstrings for details.
 After defining `marginal_logdensity`, you can call it just like the original function,
 with the difference that you only need to supply `v`, the subset of parameters you're 
 interested in, rather than the entire set `u`. You also can re-run the same 
-`MarginalLogDensity` with different `data` if you want.
+`MarginalLogDensity` with different `data` if you want (though if you're depending on 
+the sparsity of your changing the `data`
+causes the sparsity).
 
 ```julia
 initial_v = [1.0] # another arbitrary starting value
@@ -115,3 +117,6 @@ optimize(marginal_logdensity, initial_v, data, LBFGS())
 optimize(marginal_logdensity, initial_v, data, Newton())
 ```
 (Note that these outer optimizations only work with `autodiff=:finite` for now.)
+
+A more realistic application to a mixed-effects regression can be found in this
+[example script](https://github.com/ElOceanografo/MarginalLogDensities.jl/blob/master/test/example.jl).

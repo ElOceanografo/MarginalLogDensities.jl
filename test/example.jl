@@ -6,14 +6,14 @@ using Optim
 using BenchmarkTools
 
 Random.seed!(123)
-ncategories = 40
+ncategories = 100
 categories = 1:ncategories
 μ0 = 5.0
 σ0 = 5.0
 aa = rand(Normal(μ0, σ0), ncategories)
 b = 4.5
 σ = 1.5
-category = repeat(categories, inner=10)
+category = repeat(categories, inner=5)
 n = length(category)
 x = rand(Uniform(-1, 1), n)
 μ = [aa[category[i]] + b * x[i] for i in 1:n]
@@ -44,7 +44,7 @@ mld = MarginalLogDensity(loglik, u0, ix, p, LaplaceApprox(), hess_autosparse=:fo
 
 @code_warntype mld(θ0, p)
 @btime mld($θ0, $p) # 
-@profview for i in 1:10_000
+@profview for i in 1:1_000
     mld(θ0, p)
 end
 

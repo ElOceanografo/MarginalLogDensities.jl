@@ -126,11 +126,18 @@ struct MarginalLogDensity{TF, TU<:AbstractVector, TD, TV<:AbstractVector, TW<:Ab
 end
 
 function get_hessian_prototype(f, w, p2, autosparsity)
+    f2(w) = f(w, p2)
     if autosparsity == :finitediff 
-        H = FiniteDiff.finite_difference_hessian(w -> f(w, p2), w)
+        H = FiniteDiff.finite_difference_hessian(f2, w)
         hess_prototype = sparse(H) 
     elseif autosparsity == :forwarddiff
-        H = ForwardDiff.hessian(w -> f(w, p2), w)
+        H = ForwardDiff.hessian(f2, w)
+        hess_prototype = sparse(H)
+    elseif autosparsity == :reversediff
+        H = ReverseDiff.hessian(f2, w)
+        hess_prototype = sparse(H)
+    elseif autosparsity == :zygote
+        H = ReverseDiff.hessian(f2, w)
         hess_prototype = sparse(H)
     # elseif autosparsity == :sparsitydetection
         # hess_prototype = SparsityDetection.hessian_sparsity(w -> f(w, p2), w) .* one(eltype(w))

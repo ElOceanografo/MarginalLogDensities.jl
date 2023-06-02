@@ -94,7 +94,7 @@ end
         return ncorrect == size(H, 1)^2
     end
 
-    for autosparsity in [:none, :finitediff, :forwarddiff]#, :sparsitydetection]#, :symbolics]
+    for autosparsity in [:none, :finitediff, :forwarddiff, :reversediff, :zygote]
         hess_prototype = MarginalLogDensities.get_hessian_prototype(f, u, p, autosparsity)
         @test eltype(hess_prototype) == eltype(u)
         @test size(hess_prototype, 1) == size(hess_prototype, 2)
@@ -181,9 +181,11 @@ end
 end
 
 @testset "AD types" begin
-    adtypes = [Optimization.AutoFiniteDiff, 
-        Optimization.AutoForwardDiff, Optimization.AutoReverseDiff]
-        # Optimization.AutoZygote]
+    adtypes = [
+        Optimization.AutoFiniteDiff, 
+        Optimization.AutoForwardDiff, 
+        Optimization.AutoReverseDiff,
+        Optimization.AutoZygote]
     solvers = [NelderMead, LBFGS, BFGS]
 
     marginalizer = LaplaceApprox(NelderMead(); adtype=SciMLBase.NoAD())

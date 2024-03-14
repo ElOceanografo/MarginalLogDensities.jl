@@ -102,8 +102,34 @@ function Cubature(; solver=LBFGS(), adtype=Optimization.AutoForwardDiff(),
     return Cubature(solver, adtype, opt_func_kwargs, promote(upper, lower)..., nσ)
 end
 
+function get_hessian_prototype(f, w, p2, autosparsity)
+    f2(w) = f(w, p2)
+    if autosparsity == :finitediff 
+        H = FiniteDiff.finite_difference_hessian(f2, w)
+        hess_prototype = sparse(H) 
+    elseif autosparsity == :forwarddiff
+        H = ForwardDiff.hessian(f2, w)
+        hess_prototype = sparse(H)
+    elseif autosparsity == :reversediff
+        H = ReverseDiff.hessian(f2, w)
+        hess_prototype = sparse(H)
+    elseif autosparsity == :zygote
+        H = ReverseDiff.hessian(f2, w)
+        hess_prototype = sparse(H)
+    # elseif autosparsity == :sparsitydetection
+        # hess_prototype = SparsityDetection.hessian_sparsity(w -> f(w, p2), w) .* one(eltype(w))
+    # elseif autosparsity == :symbolics
+    #     ...
+    elseif autosparsity == :none
+        hess_prototype = ones(eltype(w), length(w), length(w))
+    else
+        error("Unsupported method for hessian sparsity detection: $(autosparsity)")
+    end
+    return hess_prototype
+end
+
 """
-    `MarginalLogDensity(logdensity, u, iw, data, [method=LaplaceApprox()])`
+    `MarginalLogDensity(logdensity, u, iw, [data=(), method=LaplaceApprox()[; hess_autosparse=:none]])`
 
 Construct a callable object which wraps the function `logdensity` and
 integrates over a subset of its arguments.
@@ -159,32 +185,6 @@ struct MarginalLogDensity{TF, TU<:AbstractVector, TD, TV<:AbstractVector, TW<:Ab
     iw::TW
     F::TF1
     method::TM
-end
-
-function get_hessian_prototype(f, w, p2, autosparsity)
-    f2(w) = f(w, p2)
-    if autosparsity == :finitediff 
-        H = FiniteDiff.finite_difference_hessian(f2, w)
-        hess_prototype = sparse(H) 
-    elseif autosparsity == :forwarddiff
-        H = ForwardDiff.hessian(f2, w)
-        hess_prototype = sparse(H)
-    elseif autosparsity == :reversediff
-        H = ReverseDiff.hessian(f2, w)
-        hess_prototype = sparse(H)
-    elseif autosparsity == :zygote
-        H = ReverseDiff.hessian(f2, w)
-        hess_prototype = sparse(H)
-    # elseif autosparsity == :sparsitydetection
-        # hess_prototype = SparsityDetection.hessian_sparsity(w -> f(w, p2), w) .* one(eltype(w))
-    # elseif autosparsity == :symbolics
-    #     ...
-    elseif autosparsity == :none
-        hess_prototype = ones(eltype(w), length(w), length(w))
-    else
-        error("Unsupported method for hessian sparsity detection: $(autosparsity)")
-    end
-    return hess_prototype
 end
 
 function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); hess_autosparse=:none)

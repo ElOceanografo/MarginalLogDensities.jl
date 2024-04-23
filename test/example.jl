@@ -4,6 +4,11 @@ using StatsPlots
 using Random
 using Optim
 using BenchmarkTools
+using Zygote
+using ForwardDiff
+using ReverseDiff
+using ADTypes
+using DifferentiationInterface
 
 Random.seed!(123)
 ncategories = 100
@@ -21,7 +26,11 @@ y = rand.(Normal.(μ, σ))
 
 scatter(x, y, color=category, label="")
 
-function loglik(u::Vector{T}, p) where T
+
+Distributions.StatsFuns.normlogpdf(z::Number) = -(abs2(z) + log(2π))/2
+
+
+function loglik(u, p)
     μ0 = u[1]
     σ0 = exp(u[2])
     σ = exp(u[3])
@@ -40,11 +49,13 @@ u0 = ones(length(utrue))
 iθ = 1:4
 ix = 5:length(u0)
 θ0 = u0[iθ]
-mld = MarginalLogDensity(loglik, u0, ix, p, LaplaceApprox(), hess_autosparse=:forwarddiff)
+mld = MarginalLogDensity(loglik, u0, ix, p,
+    LaplaceApprox(LBFGS(), adtype=AutoReverseDiff(true)), hess_autosparse=:none,
+    hess_adtype=AutoReverseDiff(true))
 
 @code_warntype mld(θ0, p)
 @btime mld($θ0, $p) # 
-@profview for i in 1:1_000
+@profview for i in 1:20
     mld(θ0, p)
 end
 

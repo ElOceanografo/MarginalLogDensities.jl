@@ -150,15 +150,26 @@ julia> mld(rand(2), data)
 
 ```
 """
-struct MarginalLogDensity{TF, TU<:AbstractVector, TD, TV<:AbstractVector, TW<:AbstractVector, 
-        TF1<:OptimizationFunction, TM<:AbstractMarginalizer}
+struct MarginalLogDensity{
+    TF, 
+    TU<:AbstractVector, 
+    TD, 
+    TV<:AbstractVector,
+    TW<:AbstractVector, 
+    TM<:AbstractMarginalizer,
+    TF1<:OptimizationFunction,
+    TP<:OptimizationProblem,
+    TC<:OptimizationCache
+}
     logdensity::TF
     u::TU
     data::TD
     iv::TV
     iw::TW
-    F::TF1
     method::TM
+    F::TF1
+    prob::TP
+    cache::TC
 end
 
 function get_hessian_prototype(f, w, p2, autosparsity)
@@ -205,7 +216,9 @@ function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); 
         F = OptimizationFunction(f, method.adtype; hess_prototype=hess_prototype,
             hess = hess, method.opt_func_kwargs...)
     end
-    return MarginalLogDensity(logdensity, u, data, iv, iw, F, method)
+    prob = OptimizationProblem(F, w, p2)
+    cache = init(prob, method.solver)
+    return MarginalLogDensity(logdensity, u, data, iv, iw, method, F, prob, cache)
 end
 
 function Base.show(io::IO, mld::MarginalLogDensity)
@@ -269,8 +282,10 @@ split_parameters(u, iv, iw) = (u[iv], u[iw])
 
 function optimize_marginal!(mld, p2)
     w0 = mld.u[mld.iw]
-    prob = OptimizationProblem(mld.F, w0, p2)
-    sol = solve(prob, mld.method.solver)
+    # prob = OptimizationProblem(mld.F, w0, p2)
+    # sol = solve(prob, mld.method.solver)
+    reinit!(mld.cache, u0=w0, p=p2)
+    sol = solve!(mld.cache)
     wopt = sol.u
     mld.u[mld.iw] = wopt
     return sol

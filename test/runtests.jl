@@ -107,11 +107,11 @@ end
 
 @testset "Dense approximations" begin
     x = 1.0:3.0
-    mld_laplace = MarginalLogDensity(ld, u, iw, LaplaceApprox())
+    mld_laplace = MarginalLogDensity(ld, u, iw, (), LaplaceApprox())
     lb = fill(-100.0, 2)
     ub = fill(100.0, 2)
-    mld_cubature1 = MarginalLogDensity(ld, u, iw, Cubature(lower=lb, upper=ub))
-    mld_cubature2 = MarginalLogDensity(ld, u, iw, Cubature())
+    mld_cubature1 = MarginalLogDensity(ld, u, iw, (), Cubature(lower=lb, upper=ub))
+    mld_cubature2 = MarginalLogDensity(ld, u, iw, (), Cubature())
     
     @test -mld_laplace.F(x[iw], (p=(), v=x[iv])) == ld(x, ())
     prob = OptimizationProblem(mld_laplace.F, randn(2), (p=(), v=x[iv]))
@@ -169,8 +169,8 @@ end
     
     θ0 = ones(length(θtrue))
     θmarg = θ0[[1, 2, 11, 12]]
-    mld_laplace = MarginalLogDensity(loglik, θ0, collect(3:10), LaplaceApprox())
-    mld_cubature = MarginalLogDensity(loglik, θ0, collect(3:10), 
+    mld_laplace = MarginalLogDensity(loglik, θ0, collect(3:10), p, LaplaceApprox())
+    mld_cubature = MarginalLogDensity(loglik, θ0, collect(3:10), p,
         Cubature(lower=fill(-5.0, 8), upper=fill(5, 8)))
 
     opt_laplace = optimize(θ -> -mld_laplace(θ, p), ones(4))
@@ -189,18 +189,21 @@ end
     solvers = [NelderMead, LBFGS, BFGS]
 
     marginalizer = LaplaceApprox(NelderMead(); adtype=SciMLBase.NoAD())
-    mld = MarginalLogDensity(ld, u, iw, marginalizer)
+    mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
     L0 = mld(v, ())
     marginalizer = LaplaceApprox(NelderMead(); adtype=Optimization.AutoForwardDiff())
-    mld = MarginalLogDensity(ld, u, iw, marginalizer)
+    mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
     L1 = mld(v, ())
     @test L0 ≈ L1
     for adtype in adtypes
         for solver in solvers
-            println("AD: $(adtype), Solver: $(solver)")
+            print("AD: $(adtype), Solver: $(solver), ")
             marginalizer = LaplaceApprox(solver(), adtype=adtype())
-            mld = MarginalLogDensity(ld, u, iw, marginalizer)
+            mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
+            t0 = time()
             @test L0 ≈ mld(v, ())
+            t = time() - t0
+            print("Time: $t\n")
         end
    end
 end

@@ -286,21 +286,22 @@ function optimize_marginal!(mld, p2)
     # sol = solve(prob, mld.method.solver)
     reinit!(mld.cache, u0=w0, p=p2)
     sol = solve!(mld.cache)
-    wopt = sol.u
+    wopt = sol.u::typeof(w0)
+    objective = sol.objective::eltype(w0)
     mld.u[mld.iw] = wopt
-    return sol
+    return wopt, objective
 end
 
 function _marginalize(mld, v, data, method::LaplaceApprox, verbose)
     p2 = (; p=data, v)
     verbose && println("Finding mode...")
-    sol = optimize_marginal!(mld, p2)
+    wopt, objective = optimize_marginal!(mld, p2)
     verbose && println("Calculating hessian...")
     # H = -ForwardDiff.hessian(w -> mld.F(w, p2), sol.u)
-    H = mld.F.hess(mld.F.hess_prototype, sol.u, p2)
+    H = mld.F.hess(mld.F.hess_prototype, wopt, p2)
     verbose && println("Integrating...")
     nw = length(mld.iw)
-    integral = -sol.objective + (nw/2)* log(2π) - 0.5logabsdet(H)[1]
+    integral = -objective + (nw/2)* log(2π) - 0.5logabsdet(H)[1]
     verbose && println("Done!")
     return integral#, sol 
 end
@@ -318,8 +319,7 @@ end
 function _marginalize(mld, v, data, method::Cubature, verbose)
     p2 = (; p=data, v)
     if method.lower == nothing || method.upper == nothing
-        sol = optimize_marginal!(mld, p2)
-        wopt = sol.u
+        wopt, _ = optimize_marginal!(mld, p2)
         h = hessdiag(w -> mld.F(w, p2), wopt)
         se = 1 ./ sqrt.(h)
         upper = wopt .+ method.nσ * se

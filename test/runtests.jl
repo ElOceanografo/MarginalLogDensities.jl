@@ -74,37 +74,6 @@ end
     test_rrule(merge_parameters, v, w, iv, iw)
 end
 
-@testset "Sparsity detection" begin
-    f(u, p) = dot(u, u) + p.x
-    u = ones(5)
-    p = (x = 1,)
-
-    # helper to check that hessian for this function is correct (-2 on diag, 0 elsewhere)
-    function has_correct_pattern(H)
-        ncorrect = 0
-        for i in 1:size(H, 1)
-            for j in 1:size(H, 2)
-                if i == j
-                    ncorrect += (H[i, j] != 0)
-                else
-                    ncorrect += (H[i, j] == 0)
-                end
-            end
-        end
-        return ncorrect == size(H, 1)^2
-    end
-
-    for autosparsity in [:none, :finitediff, :forwarddiff, :reversediff, :zygote]
-        hess_prototype = MarginalLogDensities.get_hessian_prototype(f, u, p, autosparsity)
-        @test eltype(hess_prototype) == eltype(u)
-        @test size(hess_prototype, 1) == size(hess_prototype, 2)
-        @test size(hess_prototype, 1) == length(u)
-        if autosparsity != :none
-            @test has_correct_pattern(hess_prototype)
-        end
-    end
-end
-
 @testset "Dense approximations" begin
     x = 1.0:3.0
     mld_laplace = MarginalLogDensity(ld, u, iw, (), LaplaceApprox())
@@ -200,10 +169,7 @@ end
             print("AD: $(adtype), Solver: $(solver), ")
             marginalizer = LaplaceApprox(solver(), adtype=adtype())
             mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
-<<<<<<< HEAD
-=======
             t0 = time()
->>>>>>> master
             @test L0 ≈ mld(v, ())
             t = time() - t0
             print("Time: $t\n")
@@ -224,8 +190,9 @@ end
     w = u[iw]
     p = (;μ, σ)
 
-    mldd = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(), hess_autosparse=:none)
-    mlds = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(), hess_autosparse=:forwarddiff)
+    mldd = MarginalLogDensity(ld, u, iw, p, LaplaceApprox())
+    mlds = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(),
+        hess_adtype=SecondOrder(AutoSparseFiniteDiff(), AutoSparseReverseDiff()))
     @test issparse(cached_hessian(mlds))
     @test ! issparse(cached_hessian(mldd))
     @test mlds(v, p) ≈ mldd(v, p)

@@ -100,32 +100,6 @@ function Cubature(; solver=LBFGS(), adtype=Optimization.AutoForwardDiff(),
     return Cubature(solver, adtype, opt_func_kwargs, promote(upper, lower)..., nσ)
 end
 
-function get_hessian_prototype(f, w, p2, autosparsity)
-    f2(w) = f(w, p2)
-    if autosparsity == :finitediff 
-        H = FiniteDiff.finite_difference_hessian(f2, w)
-        hess_prototype = sparse(H) 
-    elseif autosparsity == :forwarddiff
-        H = ForwardDiff.hessian(f2, w)
-        hess_prototype = sparse(H)
-    elseif autosparsity == :reversediff
-        H = ReverseDiff.hessian(f2, w)
-        hess_prototype = sparse(H)
-    elseif autosparsity == :zygote
-        H = Zygote.hessian(f2, w)
-        hess_prototype = sparse(H)
-    # elseif autosparsity == :sparsitydetection
-        # hess_prototype = SparsityDetection.hessian_sparsity(w -> f(w, p2), w) .* one(eltype(w))
-    # elseif autosparsity == :symbolics
-    #     ...
-    elseif autosparsity == :none
-        hess_prototype = ones(eltype(w), length(w), length(w))
-    else
-        error("Unsupported method for hessian sparsity detection: $(autosparsity)")
-    end
-    return hess_prototype
-end
-
 
 """
     `MarginalLogDensity(logdensity, u, iw, data, [method=LaplaceApprox()])`
@@ -205,22 +179,20 @@ end
 
 
 function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); 
-        hess_autosparse=:none,
-        hess_adtype=SecondOrder(AutoSparseForwardDiff(), AutoReverseDiff()))
+        hess_autosparse=:none, hess_adtype=method.adtype)
     n = length(u)
     iv = setdiff(1:n, iw)
     w = u[iw]
     v = u[iv]
     p2 = (p=data, v=v)
     f(w, p2) = -logdensity(merge_parameters(p2.v, w, iv, iw), p2.p)
-    H = get_hessian_prototype(f, w, p2, hess_autosparse)
-    f_opt = OptimizationFunction(f, method.adtype; hess_prototype=H,
-        method.opt_func_kwargs...)
+    f_opt = OptimizationFunction(f, method.adtype; method.opt_func_kwargs...)
     prob = OptimizationProblem(f_opt, w, p2)
     cache = init(prob, method.solver) 
     extras = prepare_hessian(w -> f(w, p2), hess_adtype, w)
-    return MarginalLogDensity(logdensity, u, data, iv, iw, method, f_opt, prob, cache, H,
-        hess_adtype, extras)
+    H = zeros(eltype(u), length(w), length(w))
+    return MarginalLogDensity(logdensity, u, data, iv, iw, method, f_opt, prob, cache,
+        H, hess_adtype, extras)
 end
 
 function Base.show(io::IO, mld::MarginalLogDensity)

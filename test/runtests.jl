@@ -189,7 +189,7 @@ end
     solvers = [NelderMead, LBFGS, BFGS]
 
     marginalizer = LaplaceApprox(NelderMead(); adtype=SciMLBase.NoAD())
-    mld = MarginalLogDensity(ld, u, iw, marginalizer)
+    mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
     L0 = mld(v, ())
     marginalizer = LaplaceApprox(NelderMead(); adtype=Optimization.AutoForwardDiff())
     mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
@@ -197,10 +197,16 @@ end
     @test L0 ≈ L1
     for adtype in adtypes
         for solver in solvers
-            println("AD: $(adtype), Solver: $(solver)")
+            print("AD: $(adtype), Solver: $(solver), ")
             marginalizer = LaplaceApprox(solver(), adtype=adtype())
             mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
+<<<<<<< HEAD
+=======
+            t0 = time()
+>>>>>>> master
             @test L0 ≈ mld(v, ())
+            t = time() - t0
+            print("Time: $t\n")
         end
    end
 end

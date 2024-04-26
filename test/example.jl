@@ -1,6 +1,6 @@
 using MarginalLogDensities
 using Distributions
-using StatsPlots
+# using StatsPlots
 using Random
 using Optim
 using BenchmarkTools
@@ -24,7 +24,7 @@ x = rand(Uniform(-1, 1), n)
 μ = [aa[category[i]] + b * x[i] for i in 1:n]
 y = rand.(Normal.(μ, σ))
 
-scatter(x, y, color=category, label="")
+# scatter(x, y, color=category, label="")
 
 
 Distributions.StatsFuns.normlogpdf(z::Number) = -(abs2(z) + log(2π))/2
@@ -43,7 +43,7 @@ end
 utrue = [μ0; log(σ0); b; log(σ); aa]
 p = (; category, x, y, n)
 nu = length(utrue)
-@code_warntype loglik(utrue, p)
+# @code_warntype loglik(utrue, p)
 
 u0 = ones(length(utrue))
 iθ = 1:4
@@ -53,7 +53,7 @@ mld = MarginalLogDensity(loglik, u0, ix, p,
     LaplaceApprox(LBFGS(), adtype=AutoReverseDiff(true)), hess_autosparse=:none,
     hess_adtype=AutoReverseDiff(true))
 
-@code_warntype mld(θ0, p)
+# @code_warntype mld(θ0, p)
 @btime mld($θ0, $p) # 
 @profview for i in 1:20
     mld(θ0, p)

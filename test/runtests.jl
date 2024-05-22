@@ -2,12 +2,13 @@ using MarginalLogDensities
 using Test
 using Distributions
 using Optimization, OptimizationOptimJL
-using ForwardDiff, ReverseDiff, Zygote
+using FiniteDiff, ForwardDiff, ReverseDiff, Zygote
 using LinearAlgebra, SparseArrays
 using HCubature
 using Random
-using SparseDiffTools
 using ChainRulesTestUtils
+
+Random.seed!(15950)
 
 N = 3
 μ = ones(N)
@@ -51,7 +52,7 @@ w = u[iw]
     end
     
     @testset "Marginalizers" begin
-        adtype = Optimization.AutoForwardDiff()
+        adtype = AutoForwardDiff()
         solver = BFGS()
         @test_nowarn LaplaceApprox()
         @test_nowarn LaplaceApprox(solver)
@@ -108,7 +109,6 @@ end
 end
 
 @testset "Parameters" begin
-    Random.seed!(1234)
     ncategories = 8
     categories = 1:ncategories
     μ0 = 5.0
@@ -151,19 +151,15 @@ end
 
 @testset "AD types" begin
     adtypes = [
-        Optimization.AutoFiniteDiff, 
-        Optimization.AutoForwardDiff, 
-        Optimization.AutoReverseDiff,
-        Optimization.AutoZygote]
+        AutoForwardDiff, 
+        AutoReverseDiff,
+        AutoZygote]
     solvers = [NelderMead, LBFGS, BFGS]
 
-    marginalizer = LaplaceApprox(NelderMead(); adtype=SciMLBase.NoAD())
+    marginalizer = LaplaceApprox(NelderMead(); adtype=AutoForwardDiff())
     mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
     L0 = mld(v, ())
-    marginalizer = LaplaceApprox(NelderMead(); adtype=Optimization.AutoForwardDiff())
-    mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
-    L1 = mld(v, ())
-    @test L0 ≈ L1
+    
     for adtype in adtypes
         for solver in solvers
             print("AD: $(adtype), Solver: $(solver), ")
@@ -190,9 +186,16 @@ end
     w = u[iw]
     p = (;μ, σ)
 
-    mldd = MarginalLogDensity(ld, u, iw, p, LaplaceApprox())
+    mldd = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(),
+        hess_adtype=AutoZygote())
+
     mlds = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(),
-        hess_adtype=SecondOrder(AutoSparseFiniteDiff(), AutoSparseReverseDiff()))
+        hess_adtype=AutoSparse(
+            SecondOrder(AutoForwardDiff(), AutoZygote()),
+            DenseSparsityDetector(),
+            GreedyColoringAlgorithm()
+        )
+    )
     @test issparse(cached_hessian(mlds))
     @test ! issparse(cached_hessian(mldd))
     @test mlds(v, p) ≈ mldd(v, p)

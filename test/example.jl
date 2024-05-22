@@ -50,11 +50,9 @@ iθ = 1:4
 ix = 5:length(u0)
 θ0 = u0[iθ]
 mld = MarginalLogDensity(loglik, u0, ix, p,
-    LaplaceApprox(LBFGS(), adtype=AutoReverseDiff(true)), hess_autosparse=:none,
-    hess_adtype=AutoReverseDiff(true))
-
+    LaplaceApprox(LBFGS(), adtype=AutoForwardDiff()))
 # @code_warntype mld(θ0, p)
-@btime mld($θ0, $p) # 
+@benchmark mld($θ0, $p) # 
 @profview for i in 1:20
     mld(θ0, p)
 end

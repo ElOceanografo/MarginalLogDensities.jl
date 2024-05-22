@@ -1,9 +1,11 @@
 module MarginalLogDensities
+
+using Reexport
 using Optimization
 using OptimizationOptimJL
-using ForwardDiff, FiniteDiff, ReverseDiff, Zygote
-using DifferentiationInterface
-using ADTypes
+import ForwardDiff, FiniteDiff, ReverseDiff, Zygote
+@reexport using DifferentiationInterface
+@reexport using ADTypes
 using LinearAlgebra
 using SparseArrays
 using ChainRulesCore
@@ -23,19 +25,14 @@ export MarginalLogDensity,
     merge_parameters,
     split_parameters,
     optimize_marginal!,
-    hessdiag,
-    get_hessian_sparsity
-
-# can't seem to precompile these functions
-# auto_ad_hess(x::Optimization.AutoFiniteDiff) = FiniteDiff.finite_difference_hessian!
-# auto_ad_hess(x::Optimization.AutoForwardDiff) = ForwardDiff.hessian!
-# auto_ad_hess(x::Optimization.AutoReverseDiff) = ReverseDiff.hessian!
-# auto_ad_hess(x::Optimization.AutoZygote) = (H, f, x) -> first(Zygote.hessian!(H, f, x))
+    # hessdiag,
+    get_hessian_sparsity,
+    DenseSparsityDetector
 
 abstract type AbstractMarginalizer end
 
 """
-    `LaplaceApprox([solver=LBFGS() [; adtype=Optimization.AutoForwardDiff(), opt_func_kwargs...]])
+    `LaplaceApprox([solver=LBFGS() [; adtype=AutoForwardDiff(), opt_func_kwargs...]])
 
 Construct a `LaplaceApprox` marginalizer to integrate out marginal variables via
 the Laplace approximation. This method will usually be faster than `Cubature`, especially
@@ -44,7 +41,7 @@ in high dimensions, though it may not be as accurate.
 # Arguments
 - `solver=LBFGS()` : Algorithm to use when performing the inner optimization to find the
 mode of the marginalized variables. Can be any algorithm defined in Optim.jl.
-- `adtype=Optimization.AutoForwardDiff()` : Automatic differentiation type to use for the 
+- `adtype=AutoForwardDiff()` : Automatic differentiation type to use for the 
 inner optimization. `AutoForwardDiff()` is robust and fast for small problems; for larger
 ones `AutoReverseDiff()` or `AutoZygote()` are likely better.
 - `opt_func_kwargs` : Optional keyword arguments passed on to `Optimization.OptimizationFunction`.
@@ -55,13 +52,13 @@ struct LaplaceApprox{TA, TT, TS} <: AbstractMarginalizer
     opt_func_kwargs::TT
 end
 
-function LaplaceApprox(solver=LBFGS(); adtype=Optimization.AutoForwardDiff(),
+function LaplaceApprox(solver=LBFGS(); adtype=AutoForwardDiff(),
     opt_func_kwargs...)
     return LaplaceApprox(solver, adtype, opt_func_kwargs)
 end
 
 """
-    Cubature([; solver=LBFGS(), adtype=Optimization.AutoForwardDiff(),
+    Cubature([; solver=LBFGS(), adtype=AutoForwardDiff(),
         upper=nothing, lower=nothing, nσ=6; opt_func_kwargs...])
 
 Construct a `Cubature` marginalizer to integrate out marginal variables via
@@ -77,7 +74,7 @@ The integration is performed using `hcubature` from Cubature.jl.
 # Arguments
 - `solver=LBFGS()` : Algorithm to use when performing the inner optimization to find the
 mode of the marginalized variables. Can be any algorithm defined in Optim.jl.
-- `adtype=Optimization.AutoForwardDiff()` : Automatic differentiation type to use for the 
+- `adtype=AutoForwardDiff()` : Automatic differentiation type to use for the 
 inner optimization. `AutoForwardDiff()` is robust and fast for small problems; for larger
 ones `AutoReverseDiff()` or `AutoZygote()` are likely better.
 - `upper`, `lower` : Optional upper and lower bounds for the numerical integration. If supplied,
@@ -95,11 +92,37 @@ struct Cubature{TA, TT, TS, TV, T} <: AbstractMarginalizer
     nσ::T
 end
 
-function Cubature(; solver=LBFGS(), adtype=Optimization.AutoForwardDiff(), 
+function Cubature(; solver=LBFGS(), adtype=AutoForwardDiff(), 
     upper=nothing, lower=nothing, nσ=6.0, opt_func_kwargs...)
     return Cubature(solver, adtype, opt_func_kwargs, promote(upper, lower)..., nσ)
 end
 
+##########################
+# Patch from https://github.com/gdalle/DifferentiationInterface.jl/issues/263
+struct DenseSparsityDetector{B} <: ADTypes.AbstractSparsityDetector
+    backend::B
+    atol::Float64
+end
+function DenseSparsityDetector(backend=AutoZygote(), atol=sqrt(eps()))
+    return DenseSparsityDetector(backend, atol)
+end
+
+function ADTypes.jacobian_sparsity(f, x, detector::DenseSparsityDetector)
+    J = jacobian(f, detector.backend, x)
+    return sparse(abs.(J) .> detector.atol)
+end
+
+function ADTypes.jacobian_sparsity(f!, y, x, detector::DenseSparsityDetector)
+    J = jacobian(f!, y, detector.backend, x)
+    return sparse(abs.(J) .> detector.atol)
+end
+
+function ADTypes.hessian_sparsity(f, x, detector::DenseSparsityDetector)
+    H = hessian(f, detector.backend, x)
+    return sparse(abs.(H) .> detector.atol)
+end
+
+##########################
 
 """
     `MarginalLogDensity(logdensity, u, iw, data, [method=LaplaceApprox()])`
@@ -179,7 +202,7 @@ end
 
 
 function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); 
-        hess_autosparse=:none, hess_adtype=method.adtype)
+        hess_adtype=nothing)
     n = length(u)
     iv = setdiff(1:n, iw)
     w = u[iw]
@@ -188,9 +211,17 @@ function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox();
     f(w, p2) = -logdensity(merge_parameters(p2.v, w, iv, iw), p2.p)
     f_opt = OptimizationFunction(f, method.adtype; method.opt_func_kwargs...)
     prob = OptimizationProblem(f_opt, w, p2)
-    cache = init(prob, method.solver) 
+    cache = init(prob, method.solver)
+    
+    if isnothing(hess_adtype)
+        hess_adtype = AutoSparse(
+            SecondOrder(AutoFiniteDiff(), method.adtype),
+            DenseSparsityDetector(method.adtype),
+            GreedyColoringAlgorithm()
+        ) 
+    end
     extras = prepare_hessian(w -> f(w, p2), hess_adtype, w)
-    H = zeros(eltype(u), length(w), length(w))
+    H = hessian(w -> f(w, p2), hess_adtype, w, extras)
     return MarginalLogDensity(logdensity, u, data, iv, iw, method, f_opt, prob, cache,
         H, hess_adtype, extras)
 end
@@ -221,7 +252,7 @@ nmarginal(mld::MarginalLogDensity) = length(mld.iw)
 njoint(mld::MarginalLogDensity) = length(mld.iv)
 
 """Get the value of the cached Hessian matrix."""
-cached_hessian(mld::MarginalLogDensity) = mld.F.hess_prototype
+cached_hessian(mld::MarginalLogDensity) = mld.H
 
 """
 Splice together the estimated (fixed) parameters `v` and marginalized (random) parameters
@@ -275,7 +306,6 @@ function _marginalize(mld, v, data, method::LaplaceApprox, verbose)
     wopt, objective = optimize_marginal!(mld, p2)
     verbose && println("Calculating hessian...")
     modal_hessian!(mld, wopt, p2)
-    # H = Diagonal(hessdiag(w -> mld.f_opt(w, p2), wopt))
     verbose && println("Integrating...")
     nw = length(mld.iw)
     integral = -objective + (0.5nw) * log(2π) - 0.5logabsdet(mld.H)[1]

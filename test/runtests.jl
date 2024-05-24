@@ -23,31 +23,37 @@ v = u[iv]
 w = u[iw]
 
 @testset "Constructors" begin
+    adtype = AutoForwardDiff()
+    hess_adtype = AutoZygote()
     @testset "MarginalLogDensity" begin
-        for forwarddiff_sparsity in [false, true]
-            mld1 = MarginalLogDensity(ld, u, iw, (), LaplaceApprox())
-            mld2 = MarginalLogDensity(ld, u, iw, ())
-            mld3 = MarginalLogDensity(ld, u, iw)
+        mld1 = MarginalLogDensity(ld, u, iw, (), LaplaceApprox(adtype=adtype),
+            hess_adtype=hess_adtype)
+        mld2 = MarginalLogDensity(ld, u, iw, (), LaplaceApprox(adtype=adtype))
+        mld3 = MarginalLogDensity(ld, u, iw, ())
+        mld4 = MarginalLogDensity(ld, u, iw)
 
-            mlds = [mld1, mld2, mld3]
-            for i in 1:length(mlds)-1
-                for j in i+1:length(mlds)
-                    mldi = mlds[i]
-                    mldj = mlds[j]
-                    @test dimension(mldi) == dimension(mldj)
-                    @test imarginal(mldi) == imarginal(mldj)
-                    @test ijoint(mldi) == ijoint(mldj)
-                    @test nmarginal(mldi) == nmarginal(mldj)
-                    @test njoint(mldi) == njoint(mldj)
-                end
+        @test mld1.hess_adtype != mld2.hess_adtype
+        @test mld2.hess_adtype isa AutoSparse
+        @test mld2.method.adtype == mld2.hess_adtype.dense_ad.inner
+
+        mlds = [mld1, mld2, mld3, mld4]
+        for i in 1:length(mlds)-1
+            for j in i+1:length(mlds)
+                mldi = mlds[i]
+                mldj = mlds[j]
+                @test dimension(mldi) == dimension(mldj)
+                @test imarginal(mldi) == imarginal(mldj)
+                @test ijoint(mldi) == ijoint(mldj)
+                @test nmarginal(mldi) == nmarginal(mldj)
+                @test njoint(mldi) == njoint(mldj)
             end
-            for mld in mlds
-                @test all(mld.u .== u)
-                @test all(u .== merge_parameters(v, w, iv, iw))
-                v1, w1 = split_parameters(mld.u, mld.iv, mld.iw)
-                @test all(v1 .== v)
-                @test all(w1 .== w)
-            end
+        end
+        for mld in mlds
+            @test all(mld.u .== u)
+            @test all(u .== merge_parameters(v, w, iv, iw))
+            v1, w1 = split_parameters(mld.u, mld.iv, mld.iw)
+            @test all(v1 .== v)
+            @test all(w1 .== w)
         end
     end
     

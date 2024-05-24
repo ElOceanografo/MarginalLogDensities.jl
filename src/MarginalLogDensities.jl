@@ -125,10 +125,16 @@ end
 ##########################
 
 """
-    `MarginalLogDensity(logdensity, u, iw, data, [method=LaplaceApprox()])`
+    `MarginalLogDensity(logdensity, u, iw, data, [method=LaplaceApprox(); 
+    [hess_adtype=nothing, sparsity_detector=DenseSparsityDetector(method.adtype),
+    coloring_algorithm=GreedyColoringAlgorithm()]])`
 
 Construct a callable object which wraps the function `logdensity` and
 integrates over a subset of its arguments.
+
+The resulting `MarginalLogDensity` object  `mld` can then be called like a function
+as `mld(v, data)`, where `v` is the subset of the full parameter vector `u` which is
+*not* indexed by `iw`.  If `length(u) == n` and `length(iw) == m`, then `length(v) == n-m`.
 
 # Arguments
 - `logdensity` : function with signature `(u, data)` returning a positive
@@ -140,15 +146,17 @@ NamedTuple, or whatever) that contains data and/or fixed parameters.
 - `data=()` : Optional argument
 - `method` : How to perform the marginalization.  Defaults to `LaplaceApprox()`; `Cubature()`
 is also available.
-- `hess_autosparse=:none` : Specifies how to detect sparsity in the Hessian matrix of 
-`logdensity`. Can be `:none`, `:finitediff`` `:forwarddiff`, or `:sparsitydetection`.
-If `:none` (the default), the Hessian is assumed dense and calculated using `ForwardDiff`. 
-Detecting sparsity takes some time and may not be worth it for small problems, but for 
-larger problems it can be extremely worth it.
+- `hess_adtype = nothing` : Specifies how to calculate the Hessian of the marginalized 
+variables. If not specified, defaults to a sparse second-order method using finite 
+differences over the AD type given in the `method` (`AutoForwardDiff()` is the default). 
+Other backends can be set by loading the appropriate AD package and using the ADTypes.jl 
+interface.
+- `sparsity_detector = DenseSparsityDetector(method.adtype)` : How to perform the sparsity
+detection. Detecting sparsity takes some time and may not be worth it for small problems,
+but for larger problems it can be extremely worth it.
+- `coloring_algorithm = GreedyColoringAlgorithm()` : How to determine the matrix "colors"
+to compress the sparse Hessian.
 
-The resulting `MarginalLogDensity` object  `mld` can then be called like a function
-as `mld(v, data)`, where `v` is the subset of the full parameter vector `u` which is
-*not* indexed by `iw`.  If `length(u) == n` and `length(iw) == m`, then `length(v) == n-m`.
 
 # Examples
 ```julia-repl
@@ -202,7 +210,8 @@ end
 
 
 function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); 
-        hess_adtype=nothing)
+        hess_adtype=nothing, sparsity_detector=DenseSparsityDetector(method.adtype),
+        coloring_algorithm=GreedyColoringAlgorithm())
     n = length(u)
     iv = setdiff(1:n, iw)
     w = u[iw]
@@ -216,8 +225,8 @@ function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox();
     if isnothing(hess_adtype)
         hess_adtype = AutoSparse(
             SecondOrder(AutoFiniteDiff(), method.adtype),
-            DenseSparsityDetector(method.adtype),
-            GreedyColoringAlgorithm()
+            sparsity_detector,
+            coloring_algorithm
         ) 
     end
     extras = prepare_hessian(w -> f(w, p2), hess_adtype, w)

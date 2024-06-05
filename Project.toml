@@ -34,7 +34,7 @@ Optimization = "3"
 OptimizationOptimJL = "0.1, 0.2, 0.3"
 ReverseDiff = "1"
 Zygote = "0.6"
-julia = "1.7"
+julia = "1.9"
 
 [extras]
 ChainRulesTestUtils = "cdddcdb0-9152-4a09-a978-84456f9df70a"

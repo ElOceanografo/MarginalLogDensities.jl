@@ -6,6 +6,7 @@ using OptimizationOptimJL
 import ForwardDiff, FiniteDiff, ReverseDiff, Zygote
 @reexport using DifferentiationInterface
 @reexport using ADTypes
+@reexport using SparseConnectivityTracer
 using LinearAlgebra
 using SparseArrays
 using ChainRulesCore
@@ -41,10 +42,12 @@ in high dimensions, though it may not be as accurate.
 # Arguments
 - `solver=LBFGS()` : Algorithm to use when performing the inner optimization to find the
 mode of the marginalized variables. Can be any algorithm defined in Optim.jl.
-- `adtype=AutoForwardDiff()` : Automatic differentiation type to use for the 
-inner optimization. `AutoForwardDiff()` is robust and fast for small problems; for larger
-ones `AutoReverseDiff()` or `AutoZygote()` are likely better.
-- `opt_func_kwargs` : Optional keyword arguments passed on to `Optimization.OptimizationFunction`.
+- `adtype=AutoForwardDiff()` : Automatic differentiation type to use for the inner
+optimization, specified via the ADTypes.jl interface. `AutoForwardDiff()` is robust and
+fast for small problems; for larger ones `AutoReverseDiff()` or `AutoZygote()` are likely
+better.
+- `opt_func_kwargs` : Optional keyword arguments passed on to
+`Optimization.OptimizationFunction`.
 """
 struct LaplaceApprox{TA, TT, TS} <: AbstractMarginalizer
     solver::TS
@@ -77,11 +80,13 @@ mode of the marginalized variables. Can be any algorithm defined in Optim.jl.
 - `adtype=AutoForwardDiff()` : Automatic differentiation type to use for the 
 inner optimization. `AutoForwardDiff()` is robust and fast for small problems; for larger
 ones `AutoReverseDiff()` or `AutoZygote()` are likely better.
-- `upper`, `lower` : Optional upper and lower bounds for the numerical integration. If supplied,
-they must be numeric vectors the same length as the marginal variables.
-- `nσ=6.0` : If `upper` and `lower` are not supplied, integrate this many standard deviations
-away from the mode based on a Laplace approximation to the curvature there.
-- `opt_func_kwargs` : Optional keyword arguments passed on to `Optimization.OptimizationFunction`.
+- `upper`, `lower` : Optional upper and lower bounds for the numerical integration. If
+supplied, they must be numeric vectors the same length as the marginal variables.
+- `nσ=6.0` : If `upper` and `lower` are not supplied, integrate this many standard
+deviations away from the mode based on a Laplace approximation to the curvature at that 
+point.
+- `opt_func_kwargs` : Optional keyword arguments passed on to
+`Optimization.OptimizationFunction`.
 """
 struct Cubature{TA, TT, TS, TV, T} <: AbstractMarginalizer
     solver::TS
@@ -100,7 +105,7 @@ end
 
 """
     `MarginalLogDensity(logdensity, u, iw, data, [method=LaplaceApprox(); 
-    [hess_adtype=nothing, sparsity_detector=DenseSparsityDetector(method.adtype),
+    [hess_adtype=nothing, sparsity_detector=DenseSparsityDetector(method.adtype, atol=cbrt(eps())),
     coloring_algorithm=GreedyColoringAlgorithm()]])`
 
 Construct a callable object which wraps the function `logdensity` and
@@ -125,9 +130,11 @@ variables. If not specified, defaults to a sparse second-order method using fini
 differences over the AD type given in the `method` (`AutoForwardDiff()` is the default). 
 Other backends can be set by loading the appropriate AD package and using the ADTypes.jl 
 interface.
-- `sparsity_detector = DenseSparsityDetector(method.adtype)` : How to perform the sparsity
-detection. Detecting sparsity takes some time and may not be worth it for small problems,
-but for larger problems it can be extremely worth it.
+- `sparsity_detector = DenseSparsityDetector(method.adtype, atol=cbrt(eps))` : How to
+perform the sparsity detection. Detecting sparsity takes some time and may not be worth it
+for small problems, but for larger problems it can be extremely worth it. The default 
+`DenseSparsityDetector` is most robust, but if it's too slow, or if you're running out of 
+memory on a larger problem, try the tracing-based dectectors from SparseConnectivityTracer.jl.
 - `coloring_algorithm = GreedyColoringAlgorithm()` : How to determine the matrix "colors"
 to compress the sparse Hessian.
 

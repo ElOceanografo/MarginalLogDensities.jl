@@ -198,7 +198,7 @@ end
     mlds = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(),
         hess_adtype=AutoSparse(
             SecondOrder(AutoForwardDiff(), AutoZygote()),
-            DenseSparsityDetector(),
+            DenseSparsityDetector(AutoZygote(), atol=1e-9),
             GreedyColoringAlgorithm()
         )
     )

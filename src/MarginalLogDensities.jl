@@ -97,32 +97,6 @@ function Cubature(; solver=LBFGS(), adtype=AutoForwardDiff(),
     return Cubature(solver, adtype, opt_func_kwargs, promote(upper, lower)..., nσ)
 end
 
-##########################
-# Patch from https://github.com/gdalle/DifferentiationInterface.jl/issues/263
-struct DenseSparsityDetector{B} <: ADTypes.AbstractSparsityDetector
-    backend::B
-    atol::Float64
-end
-function DenseSparsityDetector(backend=AutoZygote(), atol=sqrt(eps()))
-    return DenseSparsityDetector(backend, atol)
-end
-
-function ADTypes.jacobian_sparsity(f, x, detector::DenseSparsityDetector)
-    J = jacobian(f, detector.backend, x)
-    return sparse(abs.(J) .> detector.atol)
-end
-
-function ADTypes.jacobian_sparsity(f!, y, x, detector::DenseSparsityDetector)
-    J = jacobian(f!, y, detector.backend, x)
-    return sparse(abs.(J) .> detector.atol)
-end
-
-function ADTypes.hessian_sparsity(f, x, detector::DenseSparsityDetector)
-    H = hessian(f, detector.backend, x)
-    return sparse(abs.(H) .> detector.atol)
-end
-
-##########################
 
 """
     `MarginalLogDensity(logdensity, u, iw, data, [method=LaplaceApprox(); 
@@ -210,7 +184,7 @@ end
 
 
 function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); 
-        hess_adtype=nothing, sparsity_detector=DenseSparsityDetector(method.adtype),
+        hess_adtype=nothing, sparsity_detector=DenseSparsityDetector(method.adtype, atol=sqrt(eps())),
         coloring_algorithm=GreedyColoringAlgorithm())
     n = length(u)
     iv = setdiff(1:n, iw)

@@ -114,46 +114,6 @@ end
     @test logpdf_cubature2 >= mld_cubature2.logdensity(x, ())
 end
 
-@testset "Parameters" begin
-    ncategories = 8
-    categories = 1:ncategories
-    μ0 = 5.0
-    σ0 = 5.0
-    aa = rand(Normal(μ0, σ0), ncategories)
-    b = 4.5
-    σ = 0.5
-    category = repeat(categories, inner=200)
-    n = length(category)
-    x = rand(Uniform(-1, 1), n)
-    μ = [aa[category[i]] + b * x[i] for i in 1:n]
-    y = rand.(Normal.(μ, σ))
-        
-    function loglik(θ::Vector{T}, p) where T
-        μ0 = θ[1]
-        σ0 = exp(θ[2])
-        aa = θ[3:10]
-        b = θ[11]
-        σ = exp(θ[12])
-        μ = [aa[p.category[i]] + b * p.x[i] for i in 1:p.n]
-        return loglikelihood(Normal(μ0, σ0), aa) + sum(logpdf.(Normal.(μ, σ), p.y))
-    end
-    
-    θtrue = [μ0; log(σ0); aa; b; log(σ)]
-    p = (; category, x, y, n)
-    nθ = length(θtrue)
-    
-    θ0 = ones(length(θtrue))
-    θmarg = θ0[[1, 2, 11, 12]]
-    mld_laplace = MarginalLogDensity(loglik, θ0, collect(3:10), p, LaplaceApprox())
-    mld_cubature = MarginalLogDensity(loglik, θ0, collect(3:10), p,
-        Cubature(lower=fill(-5.0, 8), upper=fill(5, 8)))
-
-    # opt_laplace = optimize(θ -> -mld_laplace(θ, p), ones(4))
-    # opt_cubature = optimize(θ -> -mld_cubature(θ, p), ones(4))
-    # println(opt_laplace.minimizer)
-    # println(opt_cubature.minimizer)
-    # @test all(opt_laplace.minimizer .≈ opt_cubature.minimizer)
-end
 
 @testset "AD types" begin
     adtypes = [
@@ -207,4 +167,55 @@ end
     @test ! issparse(cached_hessian(mldd))
     @test mlds(v, p) ≈ mldd(v, p)
     @test all(Matrix(cached_hessian(mlds)) .≈ cached_hessian(mldd))
+end
+
+@testset "Outer Optimization" begin
+    ncategories = 8
+    categories = 1:ncategories
+    μ0 = 5.0
+    σ0 = 5.0
+    aa = rand(Normal(μ0, σ0), ncategories)
+    b = 4.5
+    σ = 0.5
+    category = repeat(categories, inner=200)
+    n = length(category)
+    x = rand(Uniform(-1, 1), n)
+    μ = [aa[category[i]] + b * x[i] for i in 1:n]
+    y = rand.(Normal.(μ, σ))
+        
+    function loglik(θ::Vector{T}, p) where T
+        μ0 = θ[1]
+        σ0 = exp(θ[2])
+        aa = θ[3:10]
+        b = θ[11]
+        σ = exp(θ[12])
+        μ = [aa[p.category[i]] + b * p.x[i] for i in 1:p.n]
+        return loglikelihood(Normal(μ0, σ0), aa) + sum(logpdf.(Normal.(μ, σ), p.y))
+    end
+    
+    θtrue = [μ0; log(σ0); aa; b; log(σ)]
+    p = (; category, x, y, n)
+    nθ = length(θtrue)
+    
+    θ0 = ones(length(θtrue))
+    θmarg = θ0[[1, 2, 11, 12]]
+    mld_laplace = MarginalLogDensity(loglik, θ0, collect(3:10), p, LaplaceApprox())
+    # mld_cubature = MarginalLogDensity(loglik, θ0, collect(3:10), p,
+    #     Cubature(lower=fill(-5.0, 8), upper=fill(5, 8)))
+
+    opt_func = OptimizationFunction(mld_laplace, AutoFiniteDiff())
+    v0 = ones(length(θmarg))
+    opt_prob1 = OptimizationProblem(opt_func, v0, p)
+    opt_prob2 = OptimizationProblem(mld_laplace, v0) 
+    opt_sol1 = solve(opt_prob1, NelderMead())
+    opt_sol2 = solve(opt_prob2, NelderMead())
+    @test all(isapprox.(opt_sol1.u, opt_sol2.u))
+
+    opt_sol1_1 = solve(opt_prob1, LBFGS())
+    @test all(isapprox.(opt_sol1.u, opt_sol1_1.u, atol=0.01))
+
+    # opt_prob3 = OptimizationProblem(mld_cubature, v0)
+    # opt_sol3 = solve(opt_prob3, NelderMead())
+    # println(maximum(abs.(opt_sol1.u .- opt_sol3.u)))
+    # @test all(isapprox.(opt_sol1.u, opt_sol3.u, atol=0.01))
 end

@@ -221,7 +221,7 @@ function Base.show(io::IO, mld::MarginalLogDensity)
     write(io, str)
 end
 
-function (mld::MarginalLogDensity)(v::AbstractVector{T}, data; verbose=false) where T
+function (mld::MarginalLogDensity)(v::AbstractVector{T}, data=mld.data; verbose=false) where T
     return _marginalize(mld, v, data, mld.method, verbose)
 end
 
@@ -333,8 +333,16 @@ function _marginalize(mld, v, data, method::Cubature, verbose)
     return log(integral)
 end
 
-# function Optim.optimize(mld::MarginalLogDensity, init_v, data=(), args...; kwargs...)
-#     return optimize(v -> -mld(v, data), init_v, args...; kwargs...)
-# end
+
+function Optimization.OptimizationFunction(mld::MarginalLogDensity,
+        args...; kwargs...)
+    return OptimizationFunction((w, p) -> -mld(w, p), args...; kwargs...)
+end
+
+function Optimization.OptimizationProblem(mld::MarginalLogDensity, v0, p=mld.data;
+    kwargs...)
+    f = OptimizationFunction(mld)
+    return OptimizationProblem(f, v0, p)
+end
 
 end # module

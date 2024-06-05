@@ -101,25 +101,31 @@ logpdf(Normal(0, 1.5), 1.0)
 ```
 
 The point of doing all this was to find an optimal set of parameters `v` for
-your data. This package defines a method for `Optim.optimize` that 
-works directly with a `MarginalLogDensity` object, making  optimization easy. Just pass
-it your marginalized function, a vector of starting values for `v`, and your `data` (which
-can be omitted if your function doesn't use it). 
+your data. This package includes an interface to Optimization.jl that 
+works directly with a `MarginalLogDensity` object, making  optimization easy. The simplest
+way is to construct an `OptimizationProblem` directly from the `MarginalLogDensity` and
+`solve` it:
 
 ```julia
-using Optim
-fit = optimize(marginal_logdensity, initial_v, data)
+using Optimization, OptimizationOptimJL
+
+opt_problem = OptimizationProblem(marginal_logdensity, v0)
+opt_solution = solve(opt_problem, NelderMead())
 ```
 
-Options for `optimize` can be passed as subsequent arguments; refer to the 
-Optim.jl docs for details. One of particular interest is the choice of optimizer:
-the default is Nelder-Mead, but you can also use gradient-based and second-order methods:
+If you want more control over options, for instance setting an AD backend, you can
+construct an `OptimizationFunction` explicitly:
 
 ```julia
-optimize(marginal_logdensity, initial_v, data, LBFGS())
-optimize(marginal_logdensity, initial_v, data, Newton())
+opt_function = OptimizationFunction(marginal_logdensity, AutoFiniteDiff())
+opt_problem = OptimizationProblem(opt_function, v0)
+opt_solution = solve(opt_problem, LBFGS())
 ```
-(Note that these outer optimizations only work with `autodiff=:finite` for now.)
+
+Note that at present we can't differentiate through the Laplace approximation, so outer 
+optimizations like this need to either use a gradient-free solver (like `NelderMead()`),
+or a finite-difference backend (like `AutoFiniteDiff()`). This is on the list of planned
+improvements.
 
 A more realistic application to a mixed-effects regression can be found in this
-[example script](https://github.com/ElOceanografo/MarginalLogDensities.jl/blob/master/test/example.jl).
+[example script](https://github.com/ElOceanografo/MarginalLogDensities.jl/blob/master/examples/example.jl).

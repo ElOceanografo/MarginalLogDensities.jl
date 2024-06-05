@@ -157,9 +157,10 @@ end
 
 @testset "AD types" begin
     adtypes = [
-        AutoForwardDiff, 
-        AutoReverseDiff,
-        AutoZygote]
+        AutoForwardDiff(), 
+        AutoReverseDiff(),
+        AutoZygote()
+    ]
     solvers = [NelderMead, LBFGS, BFGS]
 
     marginalizer = LaplaceApprox(NelderMead(); adtype=AutoForwardDiff())
@@ -169,7 +170,7 @@ end
     for adtype in adtypes
         for solver in solvers
             print("AD: $(adtype), Solver: $(solver), ")
-            marginalizer = LaplaceApprox(solver(), adtype=adtype())
+            marginalizer = LaplaceApprox(solver(), adtype=adtype)
             mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
             t0 = time()
             @test L0 ≈ mld(v, ())

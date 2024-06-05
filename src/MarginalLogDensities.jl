@@ -3,7 +3,7 @@ module MarginalLogDensities
 using Reexport
 using Optimization
 using OptimizationOptimJL
-import ForwardDiff, FiniteDiff, ReverseDiff, Zygote
+import ForwardDiff, FiniteDiff
 @reexport using DifferentiationInterface
 @reexport using ADTypes
 @reexport using SparseConnectivityTracer
@@ -27,8 +27,7 @@ export MarginalLogDensity,
     split_parameters,
     optimize_marginal!,
     # hessdiag,
-    get_hessian_sparsity,
-    DenseSparsityDetector
+    get_hessian_sparsity
 
 abstract type AbstractMarginalizer end
 

@@ -11,7 +11,7 @@ using LinearAlgebra
 using SparseArrays
 using ChainRulesCore
 using HCubature
-using Distributions
+# using Distributions
 
 export MarginalLogDensity,
     AbstractMarginalizer,

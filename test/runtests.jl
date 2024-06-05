@@ -148,7 +148,7 @@ end
     mld_cubature = MarginalLogDensity(loglik, θ0, collect(3:10), p,
         Cubature(lower=fill(-5.0, 8), upper=fill(5, 8)))
 
-    opt_laplace = optimize(θ -> -mld_laplace(θ, p), ones(4))
+    # opt_laplace = optimize(θ -> -mld_laplace(θ, p), ones(4))
     # opt_cubature = optimize(θ -> -mld_cubature(θ, p), ones(4))
     # println(opt_laplace.minimizer)
     # println(opt_cubature.minimizer)

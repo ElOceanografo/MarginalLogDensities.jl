@@ -1,9 +1,14 @@
 using MarginalLogDensities
 using Distributions
-using StatsPlots
+# using StatsPlots
 using Random
 using Optim
 using BenchmarkTools
+using Zygote
+using ForwardDiff
+using ReverseDiff
+using ADTypes
+using DifferentiationInterface
 
 Random.seed!(123)
 ncategories = 100
@@ -19,9 +24,13 @@ x = rand(Uniform(-1, 1), n)
 μ = [aa[category[i]] + b * x[i] for i in 1:n]
 y = rand.(Normal.(μ, σ))
 
-scatter(x, y, color=category, label="")
+# scatter(x, y, color=category, label="")
 
-function loglik(u::Vector{T}, p) where T
+
+Distributions.StatsFuns.normlogpdf(z::Number) = -(abs2(z) + log(2π))/2
+
+
+function loglik(u, p)
     μ0 = u[1]
     σ0 = exp(u[2])
     σ = exp(u[3])
@@ -34,17 +43,17 @@ end
 utrue = [μ0; log(σ0); b; log(σ); aa]
 p = (; category, x, y, n)
 nu = length(utrue)
-@code_warntype loglik(utrue, p)
+# @code_warntype loglik(utrue, p)
 
 u0 = ones(length(utrue))
 iθ = 1:4
 ix = 5:length(u0)
 θ0 = u0[iθ]
-mld = MarginalLogDensity(loglik, u0, ix, p, LaplaceApprox(), hess_autosparse=:forwarddiff)
-
-@code_warntype mld(θ0, p)
-@btime mld($θ0, $p) # 
-@profview for i in 1:1_000
+mld = MarginalLogDensity(loglik, u0, ix, p,
+    LaplaceApprox(LBFGS(), adtype=AutoForwardDiff()))
+# @code_warntype mld(θ0, p)
+@benchmark mld($θ0, $p) # 
+@profview for i in 1:20
     mld(θ0, p)
 end
 

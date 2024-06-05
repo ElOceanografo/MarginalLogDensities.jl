@@ -2,12 +2,13 @@ using MarginalLogDensities
 using Test
 using Distributions
 using Optimization, OptimizationOptimJL
-using ForwardDiff, ReverseDiff, Zygote
+using FiniteDiff, ForwardDiff, ReverseDiff, Zygote
 using LinearAlgebra, SparseArrays
 using HCubature
 using Random
-using SparseDiffTools
 using ChainRulesTestUtils
+
+Random.seed!(15950)
 
 N = 3
 μ = ones(N)
@@ -22,36 +23,42 @@ v = u[iv]
 w = u[iw]
 
 @testset "Constructors" begin
+    adtype = AutoForwardDiff()
+    hess_adtype = AutoZygote()
     @testset "MarginalLogDensity" begin
-        for forwarddiff_sparsity in [false, true]
-            mld1 = MarginalLogDensity(ld, u, iw, (), LaplaceApprox())
-            mld2 = MarginalLogDensity(ld, u, iw, ())
-            mld3 = MarginalLogDensity(ld, u, iw)
+        mld1 = MarginalLogDensity(ld, u, iw, (), LaplaceApprox(adtype=adtype),
+            hess_adtype=hess_adtype)
+        mld2 = MarginalLogDensity(ld, u, iw, (), LaplaceApprox(adtype=adtype))
+        mld3 = MarginalLogDensity(ld, u, iw, ())
+        mld4 = MarginalLogDensity(ld, u, iw)
 
-            mlds = [mld1, mld2, mld3]
-            for i in 1:length(mlds)-1
-                for j in i+1:length(mlds)
-                    mldi = mlds[i]
-                    mldj = mlds[j]
-                    @test dimension(mldi) == dimension(mldj)
-                    @test imarginal(mldi) == imarginal(mldj)
-                    @test ijoint(mldi) == ijoint(mldj)
-                    @test nmarginal(mldi) == nmarginal(mldj)
-                    @test njoint(mldi) == njoint(mldj)
-                end
+        @test mld1.hess_adtype != mld2.hess_adtype
+        @test mld2.hess_adtype isa AutoSparse
+        @test mld2.method.adtype == mld2.hess_adtype.dense_ad.inner
+
+        mlds = [mld1, mld2, mld3, mld4]
+        for i in 1:length(mlds)-1
+            for j in i+1:length(mlds)
+                mldi = mlds[i]
+                mldj = mlds[j]
+                @test dimension(mldi) == dimension(mldj)
+                @test imarginal(mldi) == imarginal(mldj)
+                @test ijoint(mldi) == ijoint(mldj)
+                @test nmarginal(mldi) == nmarginal(mldj)
+                @test njoint(mldi) == njoint(mldj)
             end
-            for mld in mlds
-                @test all(mld.u .== u)
-                @test all(u .== merge_parameters(v, w, iv, iw))
-                v1, w1 = split_parameters(mld.u, mld.iv, mld.iw)
-                @test all(v1 .== v)
-                @test all(w1 .== w)
-            end
+        end
+        for mld in mlds
+            @test all(mld.u .== u)
+            @test all(u .== merge_parameters(v, w, iv, iw))
+            v1, w1 = split_parameters(mld.u, mld.iv, mld.iw)
+            @test all(v1 .== v)
+            @test all(w1 .== w)
         end
     end
     
     @testset "Marginalizers" begin
-        adtype = Optimization.AutoForwardDiff()
+        adtype = AutoForwardDiff()
         solver = BFGS()
         @test_nowarn LaplaceApprox()
         @test_nowarn LaplaceApprox(solver)
@@ -74,47 +81,16 @@ end
     test_rrule(merge_parameters, v, w, iv, iw)
 end
 
-@testset "Sparsity detection" begin
-    f(u, p) = dot(u, u) + p.x
-    u = ones(5)
-    p = (x = 1,)
-
-    # helper to check that hessian for this function is correct (-2 on diag, 0 elsewhere)
-    function has_correct_pattern(H)
-        ncorrect = 0
-        for i in 1:size(H, 1)
-            for j in 1:size(H, 2)
-                if i == j
-                    ncorrect += (H[i, j] != 0)
-                else
-                    ncorrect += (H[i, j] == 0)
-                end
-            end
-        end
-        return ncorrect == size(H, 1)^2
-    end
-
-    for autosparsity in [:none, :finitediff, :forwarddiff, :reversediff, :zygote]
-        hess_prototype = MarginalLogDensities.get_hessian_prototype(f, u, p, autosparsity)
-        @test eltype(hess_prototype) == eltype(u)
-        @test size(hess_prototype, 1) == size(hess_prototype, 2)
-        @test size(hess_prototype, 1) == length(u)
-        if autosparsity != :none
-            @test has_correct_pattern(hess_prototype)
-        end
-    end
-end
-
 @testset "Dense approximations" begin
     x = 1.0:3.0
-    mld_laplace = MarginalLogDensity(ld, u, iw, LaplaceApprox())
+    mld_laplace = MarginalLogDensity(ld, u, iw, (), LaplaceApprox())
     lb = fill(-100.0, 2)
     ub = fill(100.0, 2)
-    mld_cubature1 = MarginalLogDensity(ld, u, iw, Cubature(lower=lb, upper=ub))
-    mld_cubature2 = MarginalLogDensity(ld, u, iw, Cubature())
+    mld_cubature1 = MarginalLogDensity(ld, u, iw, (), Cubature(lower=lb, upper=ub))
+    mld_cubature2 = MarginalLogDensity(ld, u, iw, (), Cubature())
     
-    @test -mld_laplace.F(x[iw], (p=(), v=x[iv])) == ld(x, ())
-    prob = OptimizationProblem(mld_laplace.F, randn(2), (p=(), v=x[iv]))
+    @test -mld_laplace.f_opt(x[iw], (p=(), v=x[iv])) == ld(x, ())
+    prob = OptimizationProblem(mld_laplace.f_opt, randn(2), (p=(), v=x[iv]))
     sol = solve(prob, BFGS())
     @test all(sol.u .≈ μ[iw])
 
@@ -139,7 +115,6 @@ end
 end
 
 @testset "Parameters" begin
-    Random.seed!(1234)
     ncategories = 8
     categories = 1:ncategories
     μ0 = 5.0
@@ -169,11 +144,11 @@ end
     
     θ0 = ones(length(θtrue))
     θmarg = θ0[[1, 2, 11, 12]]
-    mld_laplace = MarginalLogDensity(loglik, θ0, collect(3:10), LaplaceApprox())
-    mld_cubature = MarginalLogDensity(loglik, θ0, collect(3:10), 
+    mld_laplace = MarginalLogDensity(loglik, θ0, collect(3:10), p, LaplaceApprox())
+    mld_cubature = MarginalLogDensity(loglik, θ0, collect(3:10), p,
         Cubature(lower=fill(-5.0, 8), upper=fill(5, 8)))
 
-    opt_laplace = optimize(θ -> -mld_laplace(θ, p), ones(4))
+    # opt_laplace = optimize(θ -> -mld_laplace(θ, p), ones(4))
     # opt_cubature = optimize(θ -> -mld_cubature(θ, p), ones(4))
     # println(opt_laplace.minimizer)
     # println(opt_cubature.minimizer)
@@ -182,25 +157,25 @@ end
 
 @testset "AD types" begin
     adtypes = [
-        Optimization.AutoFiniteDiff, 
-        Optimization.AutoForwardDiff, 
-        Optimization.AutoReverseDiff,
-        Optimization.AutoZygote]
+        AutoForwardDiff(), 
+        AutoReverseDiff(),
+        AutoZygote()
+    ]
     solvers = [NelderMead, LBFGS, BFGS]
 
-    marginalizer = LaplaceApprox(NelderMead(); adtype=SciMLBase.NoAD())
-    mld = MarginalLogDensity(ld, u, iw, marginalizer)
+    marginalizer = LaplaceApprox(NelderMead(); adtype=AutoForwardDiff())
+    mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
     L0 = mld(v, ())
-    marginalizer = LaplaceApprox(NelderMead(); adtype=Optimization.AutoForwardDiff())
-    mld = MarginalLogDensity(ld, u, iw, marginalizer)
-    L1 = mld(v, ())
-    @test L0 ≈ L1
+    
     for adtype in adtypes
         for solver in solvers
-            println("AD: $(adtype), Solver: $(solver)")
-            marginalizer = LaplaceApprox(solver(), adtype=adtype())
-            mld = MarginalLogDensity(ld, u, iw, marginalizer)
+            print("AD: $(adtype), Solver: $(solver), ")
+            marginalizer = LaplaceApprox(solver(), adtype=adtype)
+            mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
+            t0 = time()
             @test L0 ≈ mld(v, ())
+            t = time() - t0
+            print("Time: $t\n")
         end
    end
 end
@@ -218,8 +193,16 @@ end
     w = u[iw]
     p = (;μ, σ)
 
-    mldd = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(), hess_autosparse=:none)
-    mlds = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(), hess_autosparse=:forwarddiff)
+    mldd = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(),
+        hess_adtype=AutoZygote())
+
+    mlds = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(),
+        hess_adtype=AutoSparse(
+            SecondOrder(AutoForwardDiff(), AutoZygote()),
+            DenseSparsityDetector(AutoZygote(), atol=1e-9),
+            GreedyColoringAlgorithm()
+        )
+    )
     @test issparse(cached_hessian(mlds))
     @test ! issparse(cached_hessian(mldd))
     @test mlds(v, p) ≈ mldd(v, p)

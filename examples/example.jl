@@ -1,14 +1,15 @@
 using MarginalLogDensities
 using Distributions
-# using StatsPlots
+using StatsPlots
 using Random
-using Optim
+# using Optim
 using BenchmarkTools
 using Zygote
 using ForwardDiff
 using ReverseDiff
-using ADTypes
-using DifferentiationInterface
+using Optimization, OptimizationOptimJL
+# using ADTypes
+# using DifferentiationInterface
 
 Random.seed!(123)
 ncategories = 100
@@ -24,8 +25,7 @@ x = rand(Uniform(-1, 1), n)
 μ = [aa[category[i]] + b * x[i] for i in 1:n]
 y = rand.(Normal.(μ, σ))
 
-# scatter(x, y, color=category, label="")
-
+scatter(x, y, color=category, label="")
 
 Distributions.StatsFuns.normlogpdf(z::Number) = -(abs2(z) + log(2π))/2
 
@@ -50,15 +50,18 @@ iθ = 1:4
 ix = 5:length(u0)
 θ0 = u0[iθ]
 mld = MarginalLogDensity(loglik, u0, ix, p,
-    LaplaceApprox(LBFGS(), adtype=AutoForwardDiff()))
+    LaplaceApprox())
 # @code_warntype mld(θ0, p)
 @benchmark mld($θ0, $p) # 
 @profview for i in 1:20
     mld(θ0, p)
 end
 
-opt = optimize(θ -> -mld(θ, p), ones(4))
-μ0_opt, logσ0_opt, logσ_opt, b_opt = opt.minimizer
+opt_func = OptimizationFunction(mld)
+opt_prob = OptimizationProblem(opt_func, θ0, mld.data)
+opt_sol = solve(opt_prob, NelderMead())
+
+μ0_opt, logσ0_opt, logσ_opt, b_opt = opt_sol.minimizer
 
                     # should be:
 μ0_opt              # 5.0
@@ -69,7 +72,7 @@ exp(logσ_opt)       # 1.5
 θ_opt = [μ0_opt, exp(logσ0_opt), b_opt, exp(logσ_opt)]
 
 using FiniteDiff, LinearAlgebra
-H = FiniteDiff.finite_difference_hessian(θjoint -> -mld(θjoint, p), opt.minimizer)
+H = FiniteDiff.finite_difference_hessian(θjoint -> -mld(θjoint, p), opt_sol.minimizer)
 std_errors = 1 ./ sqrt.(diag(H))
 
 θ_names = ["μ₀", "σ₀", "b", "σ"]

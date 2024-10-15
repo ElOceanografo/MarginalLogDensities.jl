@@ -212,7 +212,7 @@ end
     @test all(isapprox.(opt_sol1.u, opt_sol2.u))
 
     opt_sol1_1 = solve(opt_prob1, LBFGS())
-    @test all(isapprox.(opt_sol1.u, opt_sol1_1.u, atol=0.01))
+    @test all(isapprox.(opt_sol1.u, opt_sol1_1.u, rtol=0.01))
 
     # opt_prob3 = OptimizationProblem(mld_cubature, v0)
     # opt_sol3 = solve(opt_prob3, NelderMead())

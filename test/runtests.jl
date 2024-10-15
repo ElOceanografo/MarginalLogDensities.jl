@@ -5,10 +5,10 @@ using Optimization, OptimizationOptimJL
 using FiniteDiff, ForwardDiff, ReverseDiff, Zygote
 using LinearAlgebra, SparseArrays
 using HCubature
-using Random
+using StableRNGs
 using ChainRulesTestUtils
 
-Random.seed!(15950)
+rng = StableRNG(15)
 
 N = 3
 μ = ones(N)
@@ -18,7 +18,7 @@ ld(u, p) = logpdf(d, u)
 iw = [1, 3]
 iv = [2]
 dmarginal = Normal(1.0, σ)
-u = randn(N)
+u = randn(rng, N)
 v = u[iv]
 w = u[iw]
 
@@ -90,7 +90,7 @@ end
     mld_cubature2 = MarginalLogDensity(ld, u, iw, (), Cubature())
     
     @test -mld_laplace.f_opt(x[iw], (p=(), v=x[iv])) == ld(x, ())
-    prob = OptimizationProblem(mld_laplace.f_opt, randn(2), (p=(), v=x[iv]))
+    prob = OptimizationProblem(mld_laplace.f_opt, randn(rng, 2), (p=(), v=x[iv]))
     sol = solve(prob, BFGS())
     @test all(sol.u .≈ μ[iw])
 
@@ -148,7 +148,7 @@ end
     ld(u, p) = logpdf(MvNormal(p.μ, p.σ * I), u)
     iv = 50:60
     iw = setdiff(1:N, iv)
-    u = randn(N)
+    u = randn(rng, N)
     v = u[iv]
     w = u[iw]
     p = (;μ, σ)
@@ -174,12 +174,12 @@ end
     categories = 1:ncategories
     μ0 = 5.0
     σ0 = 5.0
-    aa = rand(Normal(μ0, σ0), ncategories)
+    aa = rand(rng, Normal(μ0, σ0), ncategories)
     b = 4.5
     σ = 0.5
     category = repeat(categories, inner=200)
     n = length(category)
-    x = rand(Uniform(-1, 1), n)
+    x = rand(rng, Uniform(-1, 1), n)
     μ = [aa[category[i]] + b * x[i] for i in 1:n]
     y = rand.(Normal.(μ, σ))
         

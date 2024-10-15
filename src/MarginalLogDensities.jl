@@ -7,6 +7,7 @@ import ForwardDiff, FiniteDiff
 @reexport using DifferentiationInterface
 @reexport using ADTypes
 @reexport using SparseConnectivityTracer
+@reexport using SparseMatrixColorings
 using LinearAlgebra
 using SparseArrays
 using ChainRulesCore
@@ -25,9 +26,8 @@ export MarginalLogDensity,
     cached_hessian,
     merge_parameters,
     split_parameters,
-    optimize_marginal!,
-    # hessdiag,
-    get_hessian_sparsity
+    optimize_marginal!
+    # hessdiag
 
 abstract type AbstractMarginalizer end
 
@@ -172,7 +172,7 @@ struct MarginalLogDensity{
         TC<:OptimizationCache,
         TH<:AbstractMatrix,
         TB<:ADTypes.AbstractADType,
-        TE<:DifferentiationInterface.HessianExtras
+        TE
 }
     logdensity::TF
     u::TU
@@ -185,7 +185,7 @@ struct MarginalLogDensity{
     cache::TC
     H::TH
     hess_adtype::TB
-    hess_extras::TE
+    hess_prep::TE
 end
 
 
@@ -204,15 +204,16 @@ function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox();
     
     if isnothing(hess_adtype)
         hess_adtype = AutoSparse(
+            # TODO: AutoForwardDiff would be much faster
             SecondOrder(AutoFiniteDiff(), method.adtype),
             sparsity_detector,
             coloring_algorithm
         ) 
     end
-    extras = prepare_hessian(w -> f(w, p2), hess_adtype, w)
-    H = hessian(w -> f(w, p2), hess_adtype, w, extras)
+    prep = prepare_hessian(f, hess_adtype, w, Constant(p2))
+    H = hessian(f, prep, hess_adtype, w, Constant(p2))
     return MarginalLogDensity(logdensity, u, data, iv, iw, method, f_opt, prob, cache,
-        H, hess_adtype, extras)
+        H, hess_adtype, prep)
 end
 
 function Base.show(io::IO, mld::MarginalLogDensity)
@@ -285,7 +286,7 @@ function optimize_marginal!(mld, p2)
 end
 
 function modal_hessian!(mld::MarginalLogDensity, w, p2)
-    hessian!(w -> mld.f_opt(w, p2), mld.H, mld.hess_adtype, w, mld.hess_extras)
+    hessian!(mld.f_opt, mld.H, mld.hess_prep, mld.hess_adtype, w, Constant(p2))
     return mld.H
 end
 

@@ -3,7 +3,7 @@ module MarginalLogDensities
 using Reexport
 using Optimization
 using OptimizationOptimJL
-import ForwardDiff, FiniteDiff
+import ForwardDiff
 @reexport using DifferentiationInterface
 @reexport using ADTypes
 @reexport using SparseConnectivityTracer
@@ -13,7 +13,6 @@ using SparseArrays
 using ComponentArrays
 using ChainRulesCore
 using HCubature
-# using Distributions
 
 export MarginalLogDensity,
     AbstractMarginalizer,
@@ -126,8 +125,8 @@ NamedTuple, or whatever) that contains data and/or fixed parameters.
 - `method` : How to perform the marginalization.  Defaults to `LaplaceApprox()`; `Cubature()`
 is also available.
 - `hess_adtype = nothing` : Specifies how to calculate the Hessian of the marginalized 
-variables. If not specified, defaults to a sparse second-order method using finite 
-differences over the AD type given in the `method` (`AutoForwardDiff()` is the default). 
+variables. If not specified, defaults to a sparse second-order method using forward AD 
+over the AD type given in the `method` (`AutoForwardDiff()` is the default). 
 Other backends can be set by loading the appropriate AD package and using the ADTypes.jl 
 interface.
 - `sparsity_detector = DenseSparsityDetector(method.adtype, atol=cbrt(eps))` : How to
@@ -203,8 +202,7 @@ function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox();
     
     if isnothing(hess_adtype)
         hess_adtype = AutoSparse(
-            # TODO: AutoForwardDiff would be much faster
-            SecondOrder(AutoFiniteDiff(), method.adtype),
+            SecondOrder(AutoForwardDiff(), method.adtype),
             sparsity_detector,
             coloring_algorithm
         ) 

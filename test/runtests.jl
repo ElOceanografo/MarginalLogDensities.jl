@@ -3,7 +3,7 @@ using Test
 using Distributions
 using ComponentArrays
 using Optimization, OptimizationOptimJL
-using FiniteDiff, ForwardDiff, ReverseDiff, Zygote
+using FiniteDiff, ForwardDiff, ReverseDiff, Zygote#, Mooncake
 using LinearAlgebra, SparseArrays
 using HCubature
 using StableRNGs
@@ -139,10 +139,12 @@ end
 
 
 @testset "AD types" begin
+
     adtypes = [
         AutoForwardDiff(), 
         AutoReverseDiff(),
-        AutoZygote()
+        AutoZygote(),
+        # AutoMooncake(config=nothing)
     ]
     solvers = [NelderMead, LBFGS, BFGS]
 
@@ -150,17 +152,25 @@ end
     mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
     L0 = mld(v, ())
     
+    results = []
     for adtype in adtypes
         for solver in solvers
-            print("AD: $(adtype), Solver: $(solver), ")
             marginalizer = LaplaceApprox(solver(), adtype=adtype)
             mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
-            t0 = time()
             @test L0 ≈ mld(v, ())
-            t = time() - t0
-            print("Time: $t\n")
+            t0 = time()
+                for i in 1:100 
+                    mld(v, ())
+                end
+            t = round(Int, (time() - t0) / 100 * 1e6)
+            push!(results, (; adtype, solver, t))
         end
-   end
+    end
+    idx = sortperm([x.t for x in results])
+    for i in idx
+        adtype, solver, t = results[i]
+        println("AD: $(adtype),\tSolver: $(solver),\tTime: $t μs")
+    end
 end
 
 @testset "Sparse LaplaceApprox" begin

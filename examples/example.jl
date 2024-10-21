@@ -49,10 +49,17 @@ u0 = ones(length(utrue))
 iθ = 1:4
 ix = 5:length(u0)
 θ0 = u0[iθ]
-mld = MarginalLogDensity(loglik, u0, ix, p,
-    LaplaceApprox())
+mld = MarginalLogDensity(loglik, u0, ix, p, LaplaceApprox())
+ad = AutoReverseDiff()
+mld1 = MarginalLogDensity(loglik, u0, ix, p, LaplaceApprox(adtype=ad))
+mld2 = MarginalLogDensity(loglik, u0, ix, p, LaplaceApprox(adtype=ad);
+    hess_adtype = AutoSparse(SecondOrder(AutoForwardDiff(), ad),
+    sparsity_detector=DenseSparsityDetector(ad, atol=eps()), coloring_algorithm=GreedyColoringAlgorithm())
+) 
 # @code_warntype mld(θ0, p)
 @benchmark mld($θ0, $p) # 
+@benchmark mld1($θ0, $p) # 
+@benchmark mld2($θ0, $p) # 
 @profview for i in 1:20
     mld(θ0, p)
 end

@@ -1,6 +1,7 @@
 using MarginalLogDensities
 using Test
 using Distributions
+using ComponentArrays
 using Optimization, OptimizationOptimJL
 using FiniteDiff, ForwardDiff, ReverseDiff, Zygote
 using LinearAlgebra, SparseArrays
@@ -21,11 +22,12 @@ dmarginal = Normal(1.0, σ)
 u = randn(rng, N)
 v = u[iv]
 w = u[iw]
+u_component = ComponentArray(v = v, w = w)
 
 @testset "Constructors" begin
     adtype = AutoForwardDiff()
     hess_adtype = AutoZygote()
-    @testset "MarginalLogDensity" begin
+    @testset "Vector u" begin
         mld1 = MarginalLogDensity(ld, u, iw, (), LaplaceApprox(adtype=adtype),
             hess_adtype=hess_adtype)
         mld2 = MarginalLogDensity(ld, u, iw, (), LaplaceApprox(adtype=adtype))
@@ -54,6 +56,24 @@ w = u[iw]
             v1, w1 = split_parameters(mld.u, mld.iv, mld.iw)
             @test all(v1 .== v)
             @test all(w1 .== w)
+        end
+
+        @testset "ComponentVector u" begin
+            u_vector = Vector(u_component)
+            iw_symbol = [:w]
+            iw_indices = label2index(u_component, :w)
+            
+            mld1 = MarginalLogDensity(ld, u_component, iw_symbol)
+            mld2 = MarginalLogDensity(ld, u_vector, iw_indices)
+            @test dimension(mld1) == dimension(mld2)
+            @test imarginal(mld1) == imarginal(mld2)
+            
+            @test all(mld1.u .== u_vector)
+            @test all(u .== merge_parameters(v, w, iv, iw))
+            v1, w1 = split_parameters(mld1.u, mld1.iv, mld1.iw)
+            v2, w2 = split_parameters(mld2.u, mld2.iv, mld2.iw)
+            @test all(v1 .== v2)
+            @test all(w1 .== w2)
         end
     end
     
@@ -84,6 +104,7 @@ end
 @testset "Dense approximations" begin
     x = 1.0:3.0
     mld_laplace = MarginalLogDensity(ld, u, iw, (), LaplaceApprox())
+    mld_laplace_component = MarginalLogDensity(ld, u_component, [:w], (), LaplaceApprox())
     lb = fill(-100.0, 2)
     ub = fill(100.0, 2)
     mld_cubature1 = MarginalLogDensity(ld, u, iw, (), Cubature(lower=lb, upper=ub))
@@ -97,12 +118,14 @@ end
     # analytical: against 1D Gaussian
     logpdf_true = logpdf(dmarginal, x[only(iv)])
     logpdf_laplace = mld_laplace(x[iv], ())
+    logpdf_laplace_component = mld_laplace_component(x[iv], ())
     logpdf_cubature1 = mld_cubature1(x[iv], ())
     logpdf_cubature2 = mld_cubature2(x[iv], ())
 
-    @test logpdf_laplace  ≈ logpdf_true
-    @test logpdf_cubature1  ≈ logpdf_true
-    @test logpdf_cubature2  ≈ logpdf_true
+    @test logpdf_laplace ≈ logpdf_true
+    @test logpdf_laplace ≈ logpdf_laplace_component
+    @test logpdf_cubature1 ≈ logpdf_true
+    @test logpdf_cubature2 ≈ logpdf_true
     # test against numerical integral
     int, err = hcubature(w -> exp(ld([w[1], x[only(iv)], w[2]], ())), lb, ub)
     @test log(int) ≈ logpdf_laplace

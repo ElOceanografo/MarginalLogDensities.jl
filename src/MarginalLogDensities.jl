@@ -10,6 +10,7 @@ import ForwardDiff, FiniteDiff
 @reexport using SparseMatrixColorings
 using LinearAlgebra
 using SparseArrays
+using ComponentArrays
 using ChainRulesCore
 using HCubature
 # using Distributions
@@ -188,12 +189,10 @@ struct MarginalLogDensity{
     hess_prep::TE
 end
 
-
 function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); 
         hess_adtype=nothing, sparsity_detector=DenseSparsityDetector(method.adtype, atol=sqrt(eps())),
         coloring_algorithm=GreedyColoringAlgorithm())
-    n = length(u)
-    iv = setdiff(1:n, iw)
+    iv = setdiff(eachindex(u), iw)
     w = u[iw]
     v = u[iv]
     p2 = (p=data, v=v)
@@ -216,6 +215,13 @@ function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox();
         H, hess_adtype, prep)
 end
 
+function MarginalLogDensity(logdensity, u::ComponentArray, iw::Vector{Symbol},
+        args...; kwargs...)
+    iw1 = reduce(vcat, label2index(u, label) for label in iw)
+    u1 = Vector(u)
+    MarginalLogDensity(logdensity, u1, iw1, args..., kwargs...)
+end
+
 function Base.show(io::IO, mld::MarginalLogDensity)
     T = typeof(mld.method).name.name
     str = "MarginalLogDensity of function $(repr(mld.logdensity))\nIntegrating $(length(mld.iw))/$(length(mld.u)) variables via $(T)"
@@ -236,10 +242,10 @@ imarginal(mld::MarginalLogDensity) = mld.iw
 ijoint(mld::MarginalLogDensity) = mld.iv
 
 """Return the number of marginalized variables."""
-nmarginal(mld::MarginalLogDensity) = length(mld.iw)
+nmarginal(mld::MarginalLogDensity) = length(mld.u[mld.iw])
 
 """Return the number of non-marginalized variables."""
-njoint(mld::MarginalLogDensity) = length(mld.iv)
+njoint(mld::MarginalLogDensity) = length(mld.u[mld.iv])
 
 """Get the value of the cached Hessian matrix."""
 cached_hessian(mld::MarginalLogDensity) = mld.H

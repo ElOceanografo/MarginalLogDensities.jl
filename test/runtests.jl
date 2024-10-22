@@ -52,7 +52,7 @@ u_component = ComponentArray(v = v, w = w)
         end
         for mld in mlds
             @test all(mld.u .== u)
-            @test all(u .== merge_parameters(v, w, iv, iw))
+            @test all(u .== merge_parameters(v, w, iv, iw, u))
             v1, w1 = split_parameters(mld.u, mld.iv, mld.iw)
             @test all(v1 .== v)
             @test all(w1 .== w)
@@ -66,10 +66,10 @@ u_component = ComponentArray(v = v, w = w)
             mld1 = MarginalLogDensity(ld, u_component, iw_symbol)
             mld2 = MarginalLogDensity(ld, u_vector, iw_indices)
             @test dimension(mld1) == dimension(mld2)
-            @test imarginal(mld1) == imarginal(mld2)
+            @test all(mld1.u[iw_symbol] .== mld2.u[iw_indices])
             
             @test all(mld1.u .== u_vector)
-            @test all(u .== merge_parameters(v, w, iv, iw))
+            @test all(u .== merge_parameters(v, w, iv, iw, u_component))
             v1, w1 = split_parameters(mld1.u, mld1.iv, mld1.iw)
             v2, w2 = split_parameters(mld2.u, mld2.iv, mld2.iw)
             @test all(v1 .== v2)
@@ -94,15 +94,19 @@ u_component = ComponentArray(v = v, w = w)
 end
 
 @testset "Custom ChainRules" begin
-    v = fill(1, 3)
-    w = fill(2, 4)
+    v = fill(1.0, 3)
+    w = fill(2.0, 4)
     iv = 1:3
     iw = 4:7
-    test_rrule(merge_parameters, v, w, iv, iw)
+    u = zeros(length(v) + length(w))
+    u[iv] .= v
+    u[iw] .= w
+    test_rrule(merge_parameters, v, w, iv, iw, u)
 end
 
 @testset "Dense approximations" begin
     x = 1.0:3.0
+    x_component = ComponentVector(v = x[iv], w = x[iw])
     mld_laplace = MarginalLogDensity(ld, u, iw, (), LaplaceApprox())
     mld_laplace_component = MarginalLogDensity(ld, u_component, [:w], (), LaplaceApprox())
     lb = fill(-100.0, 2)
@@ -117,8 +121,9 @@ end
 
     # analytical: against 1D Gaussian
     logpdf_true = logpdf(dmarginal, x[only(iv)])
+    @test x[iv] == x_component.v
     logpdf_laplace = mld_laplace(x[iv], ())
-    logpdf_laplace_component = mld_laplace_component(x[iv], ())
+    logpdf_laplace_component = mld_laplace_component(x_component[[:v]], ())
     logpdf_cubature1 = mld_cubature1(x[iv], ())
     logpdf_cubature2 = mld_cubature2(x[iv], ())
 

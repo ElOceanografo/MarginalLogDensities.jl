@@ -188,14 +188,17 @@ struct MarginalLogDensity{
     hess_prep::TE
 end
 
+_generic_eachindex(x) = eachindex(x)
+_generic_eachindex(x::ComponentArray) = keys(x)
+
 function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); 
         hess_adtype=nothing, sparsity_detector=DenseSparsityDetector(method.adtype, atol=sqrt(eps())),
         coloring_algorithm=GreedyColoringAlgorithm())
-    iv = setdiff(eachindex(u), iw)
+    iv = setdiff(_generic_eachindex(u), iw)
     w = u[iw]
     v = u[iv]
     p2 = (p=data, v=v)
-    f(w, p2) = -logdensity(merge_parameters(p2.v, w, iv, iw), p2.p)
+    f(w, p2) = -logdensity(merge_parameters(p2.v, w, iv, iw, u), p2.p)
     f_opt = OptimizationFunction(f, method.adtype; method.opt_func_kwargs...)
     prob = OptimizationProblem(f_opt, w, p2)
     cache = init(prob, method.solver)
@@ -213,16 +216,9 @@ function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox();
         H, hess_adtype, prep)
 end
 
-function MarginalLogDensity(logdensity, u::ComponentArray, iw::Vector{Symbol},
-        args...; kwargs...)
-    iw1 = reduce(vcat, label2index(u, label) for label in iw)
-    u1 = Vector(u)
-    MarginalLogDensity(logdensity, u1, iw1, args..., kwargs...)
-end
-
 function Base.show(io::IO, mld::MarginalLogDensity)
     T = typeof(mld.method).name.name
-    str = "MarginalLogDensity of function $(repr(mld.logdensity))\nIntegrating $(length(mld.iw))/$(length(mld.u)) variables via $(T)"
+    str = "MarginalLogDensity of function $(repr(mld.logdensity))\nIntegrating $(nmarginal(mld))/$(dimension(mld)) variables via $(T)"
     write(io, str)
 end
 
@@ -252,23 +248,22 @@ cached_hessian(mld::MarginalLogDensity) = mld.H
 Splice together the estimated (fixed) parameters `v` and marginalized (random) parameters
 `w` into the single parameter vector `u`, based on their indices `iv` and `iw`.
 """
-function merge_parameters(v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw) where {T1,T2}
-    N = length(v) + length(w)
-    u = Vector{promote_type(T1, T2)}(undef, N)
-    u[iv] .= v
-    u[iw] .= w
-    return u
+function merge_parameters(v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw, u) where {T1,T2}
+    u1 = convert.(promote_type(T1, T2), u)
+    u1[iv] .= v
+    u1[iw] .= w
+    return u1
 end
 
 function ChainRulesCore.rrule(::typeof(merge_parameters), 
-        v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw) where {T1,T2}
-    u = merge_parameters(v, w, iv, iw)
+        v::AbstractVector{T1}, w::AbstractVector{T2}, iv, iw, u) where {T1,T2}
+    u1 = merge_parameters(v, w, iv, iw, u)
     function merge_parameters_pullback(ubar)
         vbar = ubar[iv]
         wbar = ubar[iw]
-        return (NoTangent(), vbar, wbar, NoTangent(), NoTangent())
+        return (NoTangent(), vbar, wbar, NoTangent(), NoTangent(), NoTangent())
     end
-    return u, merge_parameters_pullback
+    return u1, merge_parameters_pullback
 end
 
 
@@ -295,14 +290,13 @@ function modal_hessian!(mld::MarginalLogDensity, w, p2)
 end
 
 function _marginalize(mld, v, data, method::LaplaceApprox, verbose)
-    p2 = (; p=data, v)
+    p2 = (; p = data, v = collect(v))
     verbose && println("Finding mode...")
     wopt, objective = optimize_marginal!(mld, p2)
     verbose && println("Calculating hessian...")
     modal_hessian!(mld, wopt, p2)
     verbose && println("Integrating...")
-    nw = length(mld.iw)
-    integral = -objective + (0.5nw) * log(2π) - 0.5logabsdet(mld.H)[1]
+    integral = -objective + (0.5nmarginal(mld)) * log(2π) - 0.5logabsdet(mld.H)[1]
     verbose && println("Done!")
     return integral#, sol 
 end
@@ -321,7 +315,6 @@ function _marginalize(mld, v, data, method::Cubature, verbose)
     p2 = (; p=data, v)
     if method.lower == nothing || method.upper == nothing
         wopt, _ = optimize_marginal!(mld, p2)
-        println(wopt)
         h = hessdiag(w -> mld.f_opt(w, p2), wopt)
         se = 1 ./ sqrt.(h)
         upper = wopt .+ method.nσ * se

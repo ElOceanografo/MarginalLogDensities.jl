@@ -290,7 +290,7 @@ function modal_hessian!(mld::MarginalLogDensity, w, p2)
 end
 
 function _marginalize(mld, v, data, method::LaplaceApprox, verbose)
-    p2 = (; p = data, v = collect(v))
+    p2 = (; p = data, v = v)
     verbose && println("Finding mode...")
     wopt, objective = optimize_marginal!(mld, p2)
     verbose && println("Calculating hessian...")

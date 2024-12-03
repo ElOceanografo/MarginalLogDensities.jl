@@ -155,14 +155,18 @@ end
 
     marginalizer = LaplaceApprox(NelderMead(); adtype=AutoForwardDiff())
     mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
+    mld_component = MarginalLogDensity(ld, u_component, [:w], (), marginalizer)
     L0 = mld(v, ())
-    
+    @test L0 ≈ mld_component(u_component[[:v]])
+
     results = []
     for adtype in adtypes
         for solver in solvers
             marginalizer = LaplaceApprox(solver(), adtype=adtype)
             mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
+            mld_component = MarginalLogDensity(ld, u_component, [:w], (), marginalizer)
             @test L0 ≈ mld(v, ())
+            @test L0 ≈ mld_component(u_component[[:v]])
             t0 = time()
                 for i in 1:100 
                     mld(v, ())

@@ -210,8 +210,8 @@ function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox();
             coloring_algorithm
         ) 
     end
-    prep = prepare_hessian(f, hess_adtype, w, Constant(p2))
-    H = hessian(f, prep, hess_adtype, w, Constant(p2))
+    prep = prepare_hessian(f_opt, hess_adtype, w, Constant(p2))
+    H = hessian(f_opt, prep, hess_adtype, w, Constant(p2))
     return MarginalLogDensity(logdensity, u, data, iv, iw, method, f_opt, prob, cache,
         H, hess_adtype, prep)
 end

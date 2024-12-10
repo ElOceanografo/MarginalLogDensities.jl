@@ -13,14 +13,15 @@ using SparseArrays
 using ComponentArrays
 using ChainRulesCore
 using HCubature
+import LogDensityProblems
 
 export MarginalLogDensity,
     AbstractMarginalizer,
     LaplaceApprox,
     Cubature,
-    dimension,
     imarginal,
     ijoint,
+    nfull,
     nmarginal,
     njoint,
     cached_hessian,
@@ -218,7 +219,7 @@ end
 
 function Base.show(io::IO, mld::MarginalLogDensity)
     T = typeof(mld.method).name.name
-    str = "MarginalLogDensity of function $(repr(mld.logdensity))\nIntegrating $(nmarginal(mld))/$(dimension(mld)) variables via $(T)"
+    str = "MarginalLogDensity of function $(repr(mld.logdensity))\nIntegrating $(nmarginal(mld))/$(nfull(mld)) variables via $(T)"
     write(io, str)
 end
 
@@ -226,14 +227,15 @@ function (mld::MarginalLogDensity)(v::AbstractVector{T}, data=mld.data; verbose=
     return _marginalize(mld, v, data, mld.method, verbose)
 end
 
-"""Return the full dimension of the marginalized function, i.e. `length(u)` """
-dimension(mld::MarginalLogDensity) = length(mld.u)
 
 """Return the indices of the marginalized variables, `iw`, in `u` """
 imarginal(mld::MarginalLogDensity) = mld.iw
 
 """Return the indices of the non-marginalized variables, `iv`, in `u` """
 ijoint(mld::MarginalLogDensity) = mld.iv
+
+"""Return the full dimension of the marginalized function, i.e. `length(u)` """
+nfull(mld::MarginalLogDensity) = length(mld.u)
 
 """Return the number of marginalized variables."""
 nmarginal(mld::MarginalLogDensity) = length(mld.u[mld.iw])
@@ -243,6 +245,14 @@ njoint(mld::MarginalLogDensity) = length(mld.u[mld.iv])
 
 """Get the value of the cached Hessian matrix."""
 cached_hessian(mld::MarginalLogDensity) = mld.H
+
+LogDensityProblems.logdensity(mld::MarginalLogDensity, u) = mld(u)
+
+LogDensityProblems.dimension(mld::MarginalLogDensity) = njoint(mld)
+
+function LogDensityProblems.capabilities(mld::MarginalLogDensity)
+    return LogDensityProblems.LogDensityOrder{0}()
+end
 
 """
 Splice together the estimated (fixed) parameters `v` and marginalized (random) parameters

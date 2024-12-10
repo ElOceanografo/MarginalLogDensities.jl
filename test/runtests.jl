@@ -8,6 +8,7 @@ using LinearAlgebra, SparseArrays
 using HCubature
 using StableRNGs
 using ChainRulesTestUtils
+import LogDensityProblems
 
 rng = StableRNG(15)
 
@@ -43,9 +44,9 @@ u_component = ComponentArray(v = v, w = w)
             for j in i+1:length(mlds)
                 mldi = mlds[i]
                 mldj = mlds[j]
-                @test dimension(mldi) == dimension(mldj)
                 @test imarginal(mldi) == imarginal(mldj)
                 @test ijoint(mldi) == ijoint(mldj)
+                @test nfull(mldi) == nfull(mldj)
                 @test nmarginal(mldi) == nmarginal(mldj)
                 @test njoint(mldi) == njoint(mldj)
             end
@@ -65,7 +66,7 @@ u_component = ComponentArray(v = v, w = w)
             
             mld1 = MarginalLogDensity(ld, u_component, iw_symbol)
             mld2 = MarginalLogDensity(ld, u_vector, iw_indices)
-            @test dimension(mld1) == dimension(mld2)
+            @test nfull(mld1) == nfull(mld2)
             @test all(mld1.u[iw_symbol] .== mld2.u[iw_indices])
             
             @test all(mld1.u .== u_vector)
@@ -102,6 +103,14 @@ end
     u[iv] .= v
     u[iw] .= w
     test_rrule(merge_parameters, v, w, iv, iw, u)
+end
+
+@testset "LogDensityProblem interface" begin
+    mld = MarginalLogDensity(ld, u, iw)
+    v = ones(njoint(mld))
+    @test LogDensityProblems.dimension(mld) == njoint(mld)
+    @test LogDensityProblems.logdensity(mld, v) == mld(v)
+    @test LogDensityProblems.capabilities(mld) == LogDensityProblems.LogDensityOrder{0}()
 end
 
 @testset "Dense approximations" begin

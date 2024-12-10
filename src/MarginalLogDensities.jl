@@ -224,7 +224,8 @@ function Base.show(io::IO, mld::MarginalLogDensity)
 end
 
 function (mld::MarginalLogDensity)(v::AbstractVector{T}, data=mld.data; verbose=false) where T
-    return _marginalize(mld, v, data, mld.method, verbose)
+    v1 = convert.(eltype(mld.u), v)
+    return _marginalize(mld, v1, data, mld.method, verbose)
 end
 
 

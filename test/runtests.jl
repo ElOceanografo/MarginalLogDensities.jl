@@ -149,6 +149,11 @@ end
     @test logpdf_laplace >= mld_laplace.logdensity(x, ())
     @test logpdf_cubature1 >= mld_cubature1.logdensity(x, ())
     @test logpdf_cubature2 >= mld_cubature2.logdensity(x, ())
+
+    # test for correct type promotion
+    v_int = ones(Int, njoint(mld_laplace))
+    v_float = ones(Float64, njoint(mld_laplace))
+    @test mld_laplace(v_int) == mld_laplace(v_float)
 end
 
 

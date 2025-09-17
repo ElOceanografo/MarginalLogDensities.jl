@@ -63,7 +63,7 @@ mathematics, if we write `u -> logdensity(u, data)` as $f(u)$, then the marginal
 function `v -> marginal_logdensity(v, data)` is calculating
 
 $$
-f_m(u_2) = \int \int f(u) \; du_1 du_2.
+f_m(u_2) = \int \int f(u) \; du_1 du_3.
 $$
 
 By default, this package uses Laplace's method to approximate this integral. The Laplace approximation

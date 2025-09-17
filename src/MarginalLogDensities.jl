@@ -225,6 +225,7 @@ end
 
 function (mld::MarginalLogDensity)(v::AbstractVector{T}, data=mld.data; verbose=false) where T
     v1 = convert.(eltype(mld.u), v)
+    mld.u[mld.iv] .= v1
     return _marginalize(mld, v1, data, mld.method, verbose)
 end
 
@@ -324,8 +325,8 @@ end
 
 function _marginalize(mld, v, data, method::Cubature, verbose)
     p2 = (; p=data, v)
+    wopt, _ = optimize_marginal!(mld, p2)
     if method.lower == nothing || method.upper == nothing
-        wopt, _ = optimize_marginal!(mld, p2)
         h = hessdiag(w -> mld.f_opt(w, p2), wopt)
         se = 1 ./ sqrt.(h)
         upper = wopt .+ method.nσ * se

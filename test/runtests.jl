@@ -167,6 +167,11 @@ end
     ]
     solvers = [NelderMead, LBFGS, BFGS]
 
+    u = randn(rng, N)
+    v = u[iv]
+    w = u[iw]
+    u_component = ComponentArray(v = v, w = w)
+
     marginalizer = LaplaceApprox(NelderMead(); adtype=AutoForwardDiff())
     mld = MarginalLogDensity(ld, u, iw, (), marginalizer)
     mld_component = MarginalLogDensity(ld, u_component, [:w], (), marginalizer)

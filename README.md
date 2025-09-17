@@ -62,9 +62,9 @@ while integrating over all possible values of `u[1]` and `u[3]`. In the laguage 
 mathematics, if we write `u -> logdensity(u, data)` as $f(u)$, then the marginalized 
 function `v -> marginal_logdensity(v, data)` is calculating
 
-$$
-f_m(u_2) = \int \int f(u) \; du_1 du_3.
-$$
+```math
+f_m(u_2) = \iint f(u) \; du_1 du_3.
+```
 
 By default, this package uses Laplace's method to approximate this integral. The Laplace approximation
 is fast in high dimensions, and works well for log-densities that are approximately Gaussian. The

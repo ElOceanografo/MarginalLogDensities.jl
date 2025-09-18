@@ -16,7 +16,18 @@ optimized faster and/or more reliably if we focus on the parameters we
 are *actually* interested in, averaging the log-density over all possible values of 
 the ones we are not.
 
-A basic example is shown below. We start out by writing a function for our target log-
+### Installation
+
+MarginalLogDensities is a registered Julia package, so you can install it from the REPL
+by hitting `]` to enter package-manager mode, then running
+
+```julia-repl
+julia> add MarginalLogDensities
+```
+
+## Basic Tutorial
+
+A basic example follows. We start out by writing a function for our target log-
 density. This function must have the signature `f(u, data)`, where `u` is a numeric vector
 of parameters and `data` contains any data, or fixed parameters, needed by the function. 
 The `data` argument can be anything you'd like, such as a `Vector`, `NamedTuple`,
@@ -66,26 +77,10 @@ function `v -> marginal_logdensity(v, data)` is calculating
 f_m(u_2) = \iint f(u) \; du_1 du_3.
 ```
 
-By default, this package uses Laplace's method to approximate this integral. The Laplace approximation
-is fast in high dimensions, and works well for log-densities that are approximately Gaussian. The
-marginalization can also be done via numerical integration, a.k.a. cubature, which may be more accurate
-but will not scale well for higher dimensional problems. You can choose which marginalizer to use by passing the
-appropriate `AbstractMarginalizer` to `MarginalLogDensity`:
-
-```julia
-MarginalLogDensity(logdensity, u, iw, data, Cubature())
-MarginalLogDensity(logdensity, u, iw, data, LaplaceApprox())
-```
-
-Both `Cubature()` and `LaplaceApprox()` can be specified with various options; refer to their 
-docstrings for details.
 
 After defining `marginal_logdensity`, you can call it just like the original function,
 with the difference that you only need to supply `v`, the subset of parameters you're 
-interested in, rather than the entire set `u`. You also can re-run the same 
-`MarginalLogDensity` with different `data` if you want (though if you're depending on 
-the sparsity of your changing the `data`
-causes the sparsity).
+interested in, rather than the entire set `u`. 
 
 ```julia
 initial_v = [1.0] # another arbitrary starting value
@@ -126,6 +121,52 @@ Note that at present we can't differentiate through the Laplace approximation, s
 optimizations like this need to either use a gradient-free solver (like `NelderMead()`),
 or a finite-difference backend (like `AutoFiniteDiff()`). This is on the list of planned
 improvements.
+
+## How it works
+
+By default, this package uses Laplace's method to approximate this integral. The Laplace approximation
+is fast in high dimensions, and works well for log-densities that are approximately Gaussian. The
+marginalization can also be done via numerical integration, a.k.a. cubature, which may be more accurate
+but will not scale well for higher dimensional problems. You can choose which marginalizer to use by passing the
+appropriate `AbstractMarginalizer` to `MarginalLogDensity`:
+
+```julia
+MarginalLogDensity(logdensity, u, iw, data, Cubature())
+MarginalLogDensity(logdensity, u, iw, data, LaplaceApprox())
+```
+
+Both `Cubature()` and `LaplaceApprox()` can be specified with various options; refer to their 
+docstrings for details.
+
+<!-- You also can re-run the same 
+`MarginalLogDensity` with different `data` if you want (though if you're depending on 
+the sparsity of your changing the `data`
+causes the sparsity). -->
+
+## A more realistic example: hierarchical regression
+
+```julia
+using MarginalLogDensities
+using Distributions
+using StatsPlots
+using Random
+
+Random.seed!(123)
+ncategories = 100
+categories = 1:ncategories
+μ0 = 5.0
+σ0 = 5.0
+aa = rand(Normal(μ0, σ0), ncategories)
+b = 4.5
+σ = 1.5
+category = repeat(categories, inner=5)
+n = length(category)
+x = rand(Uniform(-1, 1), n)
+μ = [aa[category[i]] + b * x[i] for i in 1:n]
+y = rand.(Normal.(μ, σ))
+
+scatter(x, y, color=category, label="")
+```
 
 A more realistic application to a mixed-effects regression can be found in this
 [example script](https://github.com/ElOceanografo/MarginalLogDensities.jl/blob/master/examples/example.jl).

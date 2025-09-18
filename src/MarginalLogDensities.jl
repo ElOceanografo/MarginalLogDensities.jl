@@ -24,6 +24,7 @@ export MarginalLogDensity,
     nfull,
     nmarginal,
     njoint,
+    cached_params,
     cached_hessian,
     merge_parameters,
     split_parameters,
@@ -244,6 +245,13 @@ nmarginal(mld::MarginalLogDensity) = length(mld.u[mld.iw])
 
 """Return the number of non-marginalized variables."""
 njoint(mld::MarginalLogDensity) = length(mld.u[mld.iv])
+
+"""
+Get the value of the cached parameter vector `u`. This includes the latest values given 
+for the non-marginalized variables `v`, as well as the modal values of the marginalized
+variables `w` conditional on `v`.
+"""
+cached_params(mld::MarginalLogDensity) = mld.u
 
 """Get the value of the cached Hessian matrix."""
 cached_hessian(mld::MarginalLogDensity) = mld.H

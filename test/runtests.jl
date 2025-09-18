@@ -53,6 +53,8 @@ u_component = ComponentArray(v = v, w = w)
         end
         for mld in mlds
             @test all(mld.u .== u)
+            @test all(cached_params(mld) .== u)
+            @test cached_hessian(mld) == mld.H
             @test all(u .== merge_parameters(v, w, iv, iw, u))
             v1, w1 = split_parameters(mld.u, mld.iv, mld.iw)
             @test all(v1 .== v)

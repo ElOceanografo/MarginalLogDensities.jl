@@ -1,7 +1,7 @@
 name = "MarginalLogDensities"
 uuid = "f0c3360a-fb8d-11e9-1194-5521fd7ee392"
 authors = ["Sam Urmy <oceanographerschoice@gmail.com>"]
-version = "0.4.2"
+version = "0.4.3"
 
 [deps]
 ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"

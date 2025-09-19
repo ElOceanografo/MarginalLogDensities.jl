@@ -34,7 +34,7 @@ export MarginalLogDensity,
 abstract type AbstractMarginalizer end
 
 """
-    `LaplaceApprox([solver=LBFGS() [; adtype=AutoForwardDiff(), opt_func_kwargs...]])
+    LaplaceApprox([solver=LBFGS() [; adtype=AutoForwardDiff(), opt_func_kwargs...]])
 
 Construct a `LaplaceApprox` marginalizer to integrate out marginal variables via
 the Laplace approximation. This method will usually be faster than `Cubature`, especially
@@ -62,8 +62,7 @@ function LaplaceApprox(solver=LBFGS(); adtype=AutoForwardDiff(),
 end
 
 """
-    Cubature([; solver=LBFGS(), adtype=AutoForwardDiff(),
-        upper=nothing, lower=nothing, nσ=6; opt_func_kwargs...])
+    Cubature([; solver=LBFGS(), adtype=AutoForwardDiff(), upper=nothing, lower=nothing, nσ=6; opt_func_kwargs...])
 
 Construct a `Cubature` marginalizer to integrate out marginal variables via
 numerical integration (a.k.a. cubature).
@@ -105,9 +104,9 @@ end
 
 
 """
-    `MarginalLogDensity(logdensity, u, iw, data, [method=LaplaceApprox(); 
+    MarginalLogDensity(logdensity, u, iw, data, [method=LaplaceApprox(); 
     [hess_adtype=nothing, sparsity_detector=DenseSparsityDetector(method.adtype, atol=cbrt(eps())),
-    coloring_algorithm=GreedyColoringAlgorithm()]])`
+    coloring_algorithm=GreedyColoringAlgorithm()]])
 
 Construct a callable object which wraps the function `logdensity` and
 integrates over a subset of its arguments.

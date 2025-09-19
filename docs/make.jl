@@ -20,6 +20,6 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/ElOceanografo/MarginalLogDensities.jl",
+    repo="github.com/ElOceanografo/MarginalLogDensities.jl.git",
     devbranch="master",
 )

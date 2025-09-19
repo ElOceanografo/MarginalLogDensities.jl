@@ -15,7 +15,18 @@ makedocs(;
         assets=String[],
     ),
     pages=[
-        "Home" => "index.md",
+        "Getting started" => "index.md",
+        "User guide" => [
+            "Theory" => "theory.md",
+            "Sparsity and AD" => "sparse_ad.md",
+            "Tips for success" => "tips.md"
+        ],
+        "Examples" => [
+            "Hierarchical regression" => "hreg.md",
+            "Using ComponenetArrays" => "componentarrays.md",
+            "Turing integration" => "turing.md"
+        ],
+        "API Reference" => "api.md"
     ],
 )
 

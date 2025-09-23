@@ -320,12 +320,12 @@ function _marginalize(mld, v, data, method::LaplaceApprox, verbose)
     return integral#, sol 
 end
 
-function hessdiag(f, x::Vector{T}) where T
+function hessdiag(f, adtype, x::Vector{T}) where T
     Δx = sqrt(eps(T))
     x .+= Δx
-    g1 = ForwardDiff.gradient(f, x)
+    g1 = gradient(f, adtype, x)
     x .-= 2Δx
-    g2 = ForwardDiff.gradient(f, x)
+    g2 = gradient(f, adtype, x)
     x .+= Δx # reset u
     return (g1 .- g2) ./ 2Δx
 end
@@ -333,8 +333,8 @@ end
 function _marginalize(mld, v, data, method::Cubature, verbose)
     p2 = (; p=data, v)
     wopt, _ = optimize_marginal!(mld, p2)
-    if method.lower == nothing || method.upper == nothing
-        h = hessdiag(w -> mld.f_opt(w, p2), wopt)
+    if isnothing(method.lower) || isnothing(method.upper)
+        h = hessdiag(w -> mld.f_opt(w, p2), method.adtype, wopt)
         se = 1 ./ sqrt.(h)
         upper = wopt .+ method.nσ * se
         lower = wopt .- method.nσ * se

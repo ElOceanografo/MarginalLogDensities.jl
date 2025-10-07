@@ -1,7 +1,12 @@
 [deps]
+ComponentArrays = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 MarginalLogDensities = "f0c3360a-fb8d-11e9-1194-5521fd7ee392"
+Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
 Optimization = "7f7a1694-90dd-40f0-9382-eb1efda571ba"
 OptimizationOptimJL = "36348300-93cb-4f02-beb5-3c3902f8871e"
+OptimizationPolyalgorithms = "500b13db-7e66-49ce-bda4-eed966be6282"
+ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
 StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"

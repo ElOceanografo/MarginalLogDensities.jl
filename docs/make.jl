@@ -23,7 +23,7 @@ makedocs(;
         ],
         "Examples" => [
             "Hierarchical regression" => "hreg.md",
-            "Using ComponenetArrays" => "componentarrays.md",
+            "Using ComponentArrays" => "componentarrays.md",
             "Turing integration" => "turing.md"
         ],
         "API Reference" => "api.md"

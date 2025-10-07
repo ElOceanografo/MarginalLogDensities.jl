@@ -320,7 +320,7 @@ function _marginalize(mld, v, data, method::LaplaceApprox, verbose)
     return integral#, sol 
 end
 
-function hessdiag(f, adtype, x::Vector{T}) where T
+function hessdiag(f, adtype, x::AbstractVector{T}) where T
     Δx = sqrt(eps(T))
     x .+= Δx
     g1 = gradient(f, adtype, x)

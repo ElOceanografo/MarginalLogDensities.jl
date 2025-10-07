@@ -25,11 +25,13 @@ export MarginalLogDensity,
     nmarginal,
     njoint,
     cached_params,
+    cached_marginal,
+    cached_joint,
     cached_hessian,
     merge_parameters,
     split_parameters,
-    optimize_marginal!
-    # hessdiag
+    optimize_marginal!,
+    hessdiag
 
 abstract type AbstractMarginalizer end
 
@@ -193,7 +195,7 @@ _generic_eachindex(x) = eachindex(x)
 _generic_eachindex(x::ComponentArray) = keys(x)
 
 function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); 
-        hess_adtype=nothing, sparsity_detector=DenseSparsityDetector(method.adtype, atol=sqrt(eps())),
+        hess_adtype=nothing, sparsity_detector=TracerLocalSparsityDetector(),#DenseSparsityDetector(method.adtype, atol=sqrt(eps())),
         coloring_algorithm=GreedyColoringAlgorithm())
     iv = setdiff(_generic_eachindex(u), iw)
     w = u[iw]
@@ -251,6 +253,19 @@ for the non-marginalized variables `v`, as well as the modal values of the margi
 variables `w` conditional on `v`.
 """
 cached_params(mld::MarginalLogDensity) = mld.u
+
+"""
+Get the value of the cached marginal variables `w`, conditional on the values of the
+joint parameters `v` the last time `mld` was called. Equivalent to 
+`cached_params(mld)[mld.iw]`
+"""
+cached_marginal(mld::MarginalLogDensity) = mld.u[mld.iw]
+
+"""
+Get the values of the joint parameters `v` as of the last time `mld` was called.
+Equivalent to `cached_params(mld)[mld.iv]
+"""
+cached_joint(mld::MarginalLogDensity) = mld.u[mld.iv]
 
 """Get the value of the cached Hessian matrix."""
 cached_hessian(mld::MarginalLogDensity) = mld.H

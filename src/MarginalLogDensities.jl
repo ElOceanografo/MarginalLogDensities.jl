@@ -195,7 +195,7 @@ _generic_eachindex(x) = eachindex(x)
 _generic_eachindex(x::ComponentArray) = keys(x)
 
 function MarginalLogDensity(logdensity, u, iw, data=(), method=LaplaceApprox(); 
-        hess_adtype=nothing, sparsity_detector=TracerLocalSparsityDetector(),
+        hess_adtype=nothing, sparsity_detector=DenseSparsityDetector(method.adtype, atol=cbrt(eps())),
         coloring_algorithm=GreedyColoringAlgorithm())
     iv = setdiff(_generic_eachindex(u), iw)
     w = u[iw]

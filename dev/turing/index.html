@@ -46,7 +46,7 @@ chain = sample(marginal, sampler, 1000; chain_type=MCMCChains.Chains,
     # HACK: this a dirty way to extract the variable names in a model; it won&#39;t work in general.
     param_names=setdiff(keys(DynamicPPL.untyped_varinfo(full)), [@varname(m)])
 )
-plot(chain)</code></pre><img src="1ffd9515.svg" alt="Example block output"/><p>Sampling using Hamiltonian Monte Carlo is possible, but is more awkward and currently pretty slow. The following is adapted from the AdvancedHMC  <a href="https://turinglang.org/AdvancedHMC.jl/stable/get_started/">documentation</a>:</p><pre><code class="language-julia hljs">using AdvancedHMC
+plot(chain)</code></pre><img src="cbb46da0.svg" alt="Example block output"/><p>Sampling using Hamiltonian Monte Carlo is possible, but is more awkward and currently pretty slow. The following is adapted from the AdvancedHMC  <a href="https://turinglang.org/AdvancedHMC.jl/stable/get_started/">documentation</a>:</p><pre><code class="language-julia hljs">using AdvancedHMC
 import FiniteDiff
 using LogDensityProblems
 

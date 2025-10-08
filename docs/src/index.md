@@ -16,6 +16,12 @@ optimized faster and/or more reliably if we focus on the parameters we
 are *actually* interested in, averaging the log-density over all possible values of 
 the ones we are not.
 
+!!! warning
+
+    This package is under development and should still be considered experimental at this
+    point. Exercise appropriate caution and check your results if you're using it for 
+    anything important. Bug reports, pull requests, and new use-cases are all welcome!
+
 ## Installation
 
 MarginalLogDensities (MLD for short) requires Julia v1.10 or greater. It is a registered
@@ -101,7 +107,6 @@ You also can re-run the same `MarginalLogDensity` with different `data` if you w
 though if the sparsity of your problem depends on the `data` in shome way, this may
 cause errors. See the section on sparsity for more information.
 
-
 The point of doing all this was to find an optimal set of parameters `v` for
 your data. MLD includes an interface to Optimization.jl that 
 works directly with a `MarginalLogDensity` object, making  optimization easy. The simplest
@@ -128,5 +133,5 @@ opt_solution = solve(opt_problem, LBFGS())
 
     At present we can't differentiate through the Laplace approximation, so outer 
     optimizations like this need to either use a gradient-free solver (like `NelderMead()`),
-    or a finite-difference backend (like `AutoFiniteDiff()`). This is on the list of planned
-    improvements.
+    or a finite-difference backend (like `AutoFiniteDiff()`). We hope to remove this 
+    limitation in the future.

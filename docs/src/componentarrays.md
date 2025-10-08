@@ -38,7 +38,7 @@ function logdensity(u, data)
     c  = data.c
 
     # Prior on x[1]
-    ll = loglikelihood(Normal(0, 10), x[:, 1])
+    ll = logpdf(MvNormal(zeros(2), 10), x[:, 1])
     # first observation
     ll += logpdf(MvNormal(x[:, 1], c), y[:, 1])
     # rest of time series
@@ -58,7 +58,7 @@ data = (y = y, n = n, c = c)
 joint_vars = [:A, :log_b]
 
 mld = MarginalLogDensity(logdensity, u0, [:x], data,
-    LaplaceApprox(adtype=AutoReverseDiff()))
+    LaplaceApprox(adtype=AutoReverseDiff()), sparsity_detector=TracerSparsityDetector())
 v0 = u0[joint_vars]
 # @time mld(v0)
 func = OptimizationFunction(mld);
@@ -176,7 +176,7 @@ function logdensity(u, data)
     c  = data.c
 
     # Prior on initial state
-    ll = loglikelihood(Normal(0, 10), x[:, 1])
+    ll = logpdf(MvNormal(zeros(2), 10), x[:, 1])
     # first observation
     ll += logpdf(MvNormal(x[:, 1], c), y[:, 1])
     # rest of time series
@@ -203,7 +203,7 @@ data = (y = y, n = n, c = c)
 joint_vars = [:A, :log_b]
 
 mld = MarginalLogDensity(logdensity, u0, [:x], data,
-    LaplaceApprox(adtype=AutoReverseDiff()))
+    LaplaceApprox(adtype=AutoReverseDiff()), sparsity_detector=TracerSparsityDetector())
 ```
 
 However, we've specified we want to integrate out the latent states `x` as a 

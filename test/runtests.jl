@@ -219,17 +219,24 @@ end
     mldd = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(),
         hess_adtype=AutoZygote())
 
-    mlds = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(),
-        hess_adtype=AutoSparse(
-            SecondOrder(AutoForwardDiff(), AutoZygote()),
-            DenseSparsityDetector(AutoZygote(), atol=1e-9),
-            GreedyColoringAlgorithm()
+    detectors = [
+        DenseSparsityDetector(AutoZygote(), atol=1e-9),
+        TracerSparsityDetector(),
+        TracerLocalSparsityDetector()
+    ]
+    for detector in detectors
+        mlds = MarginalLogDensity(ld, u, iw, p, LaplaceApprox(),
+            hess_adtype=AutoSparse(
+                SecondOrder(AutoForwardDiff(), AutoZygote()),
+                detector,
+                GreedyColoringAlgorithm()
+            )
         )
-    )
-    @test issparse(cached_hessian(mlds))
-    @test ! issparse(cached_hessian(mldd))
-    @test mlds(v, p) ≈ mldd(v, p)
-    @test all(Matrix(cached_hessian(mlds)) .≈ cached_hessian(mldd))
+        @test issparse(cached_hessian(mlds))
+        @test ! issparse(cached_hessian(mldd))
+        @test mlds(v, p) ≈ mldd(v, p)
+        @test all(Matrix(cached_hessian(mlds)) .≈ cached_hessian(mldd))
+    end
 end
 
 @testset "Outer Optimization" begin

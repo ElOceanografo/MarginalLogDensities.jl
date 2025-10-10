@@ -13,12 +13,13 @@ specifying the variables to marginalize by their names.
 ## Model definition
 
 Models can be defined using Turing's `@model` macro and probabilistic programming syntax. 
-Here, we define a simple 
+Here, we define a simple model with a latent variable `x` that follows a Gaussian 
+distribution with mean `m` and covariance `C`.
 
 ```@setup turing
 using Turing
 using MarginalLogDensities
-using Turing.DynamicPPL: marginalize
+using DynamicPPL
 using Distributions
 using LinearAlgebra
 using StatsPlots
@@ -30,8 +31,8 @@ r = 0.4
 a = 2
 n = 50
 m = fill(a, n)
-Q = Tridiagonal(fill(-r, n-1), ones(n), fill(-r, n-1))
-y = rand(MvNormalCanon(m, Q))
+C = Tridiagonal(fill(-r, n-1), ones(n), fill(-r, n-1))
+y = rand(MvNormal(m, C))
 plot(y)
 
 @model function demo(y)
@@ -39,15 +40,22 @@ plot(y)
     r ~ Uniform(-0.5, 0.5)
     a ~ Normal(0, 5)
     m ~ MvNormal(fill(a, n), 1)
-    Q = Tridiagonal(fill(-r, n-1), ones(n), fill(-r, n-1))
+    C = Tridiagonal(fill(-r, n-1), ones(n), fill(-r, n-1))
 
-    y ~ MvNormalCanon(m, Q)
+    y ~ MvNormal(m, C)
 end
 
 full = demo(y)
 marginal = marginalize(full, [@varname(m)])
 njoint(marginal)
 marginal([0.1, 1.0])
+
+using Optimization, OptimizationOptimJL
+
+v0 = zeros(2)
+opt_func = OptimizationFunction(marginal)
+opt_prob = OptimizationProblem(opt_func, v0, ())
+opt_sol = solve(opt_prob, NelderMead())
 ```
 
 ```@example turing
@@ -57,13 +65,16 @@ using DynamicPPL
 using Distributions
 using LinearAlgebra
 using StatsPlots
+using Random
+
+Random.seed!(4321)
 
 r = 0.4
 a = 2
 n = 50
 m = fill(a, n)
-Q = Tridiagonal(fill(-r, n-1), ones(n), fill(-r, n-1))
-y = rand(MvNormal(m, Q))
+C = Tridiagonal(fill(-r, n-1), ones(n), fill(-r, n-1))
+y = rand(MvNormal(m, C))
 plot(y)
 
 @model function demo(y)
@@ -71,13 +82,15 @@ plot(y)
     r ~ Uniform(-0.5, 0.5)
     a ~ Normal(0, 5)
     m ~ MvNormal(fill(a, n), 1)
-    Q = Tridiagonal(fill(-r, n-1), ones(n), fill(-r, n-1))
+    C = Tridiagonal(fill(-r, n-1), ones(n), fill(-r, n-1))
 
-    y ~ MvNormal(m, Q)
+    y ~ MvNormal(m, C)
 end
 
 full = demo(y)
 marginal = marginalize(full, [@varname(m)])
+njoint(marginal)
+marginal([0.1, 1.0])
 ```
 
 ## Maximum a-posteriori optimization
@@ -98,24 +111,32 @@ Turing model, but not too bad. Keep in mind that `MarginalLogDensity` objects do
 currently work with AD, so samplers must either be gradient free (like random-walk
 Metropolis Hastings), or use a finite-difference backend (e.g. `AutoFiniteDiff()`.)
 
-The code below was adapted from @torfjelde's example on GitHub [here](https://github.com/TuringLang/Turing.jl/issues/2398#issuecomment-2514212264).
+The code below was adapted from @torfjelde's example on GitHub
+[here](https://github.com/TuringLang/Turing.jl/issues/2398#issuecomment-2514212264). We 
+request 100 samples with a thinning rate of 20 - that is, we'll run 2,000 samples and keep 
+every 20th one. We also set the inital parameters to the MAP optimum we found before, 
+which speeds up convergence in this case.
 
 ```@example turing
 using AbstractMCMC, AdvancedMH
 
 sampler = AdvancedMH.RWMH(njoint(marginal))
-chain = sample(marginal, sampler, 1000; chain_type=MCMCChains.Chains,
+chain = sample(marginal, sampler, 100; chain_type=MCMCChains.Chains,
+    thinning=20, initial_params=opt_sol.u,
     # HACK: this a dirty way to extract the variable names in a model; it won't work in general.
     param_names=setdiff(keys(DynamicPPL.untyped_varinfo(full)), [@varname(m)])
 )
 plot(chain)
 ```
 
-Sampling using Hamiltonian Monte Carlo is possible, but is more awkward and currently
-pretty slow. The following is adapted from the AdvancedHMC 
+These chains are short for the sake of the demo, but could easily be run longer to get a 
+smoother posterior.
+
+Sampling using Hamiltonian Monte Carlo is possible, but is currently a bit more awkward.
+The following is adapted from the AdvancedHMC 
 [documentation](https://turinglang.org/AdvancedHMC.jl/stable/get_started/):
 
-```julia
+```@example turing
 using AdvancedHMC
 import FiniteDiff
 using LogDensityProblems
@@ -126,14 +147,15 @@ n_samples, n_adapts = 200, 100
 # Define a Hamiltonian system
 metric = DiagEuclideanMetric(njoint(marginal))
 hamiltonian = Hamiltonian(metric, marginal, AutoFiniteDiff())
-initial_ϵ = 0.1 
+initial_ϵ = 0.4 
 integrator = Leapfrog(initial_ϵ)
 kernel = HMCKernel(Trajectory{MultinomialTS}(integrator, GeneralisedNoUTurn()))
 adaptor = StanHMCAdaptor(MassMatrixAdaptor(metric), StepSizeAdaptor(0.8, integrator))
 
 samples, stats = sample(
-    hamiltonian, kernel, v0, n_samples, adaptor, n_adapts; progress=true
+    hamiltonian, kernel, opt_sol.u, n_samples, adaptor, n_adapts; progress=true,
 )
+plot(hcat(samples...)', layout=(2,  1), xlabel="Iteration", ylabel=["r" "a"], legend=false)
 ```
 
 ## Un-linking parameters

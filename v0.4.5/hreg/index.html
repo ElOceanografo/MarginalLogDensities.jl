@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Hierarchical regression · MarginalLogDensities.jl</title><meta name="title" content="Hierarchical regression · MarginalLogDensities.jl"/><meta property="og:title" content="Hierarchical regression · MarginalLogDensities.jl"/><meta property="twitter:title" content="Hierarchical regression · MarginalLogDensities.jl"/><meta name="description" content="Documentation for MarginalLogDensities.jl."/><meta property="og:description" content="Documentation for MarginalLogDensities.jl."/><meta property="twitter:description" content="Documentation for MarginalLogDensities.jl."/><meta property="og:url" content="https://ElOceanografo.github.io/MarginalLogDensities.jl/hreg/"/><meta property="twitter:url" content="https://ElOceanografo.github.io/MarginalLogDensities.jl/hreg/"/><link rel="canonical" href="https://ElOceanografo.github.io/MarginalLogDensities.jl/hreg/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">MarginalLogDensities.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">Getting started</a></li><li><span class="tocitem">User guide</span><ul><li><a class="tocitem" href="../theory/">Theory</a></li><li><a class="tocitem" href="../sparse_ad/">Sparsity and AD</a></li><li><a class="tocitem" href="../tips/">Tips for success</a></li></ul></li><li><span class="tocitem">Examples</span><ul><li class="is-active"><a class="tocitem" href>Hierarchical regression</a></li><li><a class="tocitem" href="../componentarrays/">Using ComponentArrays</a></li><li><a class="tocitem" href="../turing/">Turing integration</a></li></ul></li><li><a class="tocitem" href="../api/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Hierarchical regression</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Hierarchical regression</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/ElOceanografo/MarginalLogDensities.jl/blob/master/docs/src/hreg.md#" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="A-more-realistic-example:-hierarchical-regression"><a class="docs-heading-anchor" href="#A-more-realistic-example:-hierarchical-regression">A more realistic example: hierarchical regression</a><a id="A-more-realistic-example:-hierarchical-regression-1"></a><a class="docs-heading-anchor-permalink" href="#A-more-realistic-example:-hierarchical-regression" title="Permalink"></a></h1><p>Let&#39;s show how to use MLD on a slightly more complex problem, similar to one you might actually encounter in practice: a hierarchical linear regression. Our response variable  <span>$y$</span> is a linear function of the predictor <span>$x$</span> plus some normally-distributed noise.  Our data are divided into 50 different groups, and each group <span>$i$</span> has its own intercept term <span>$a_i$</span>. These intercepts are in turn drawn from a normal distribution with mean <span>$\mu_0$</span> and standard deviation <span>$\sigma_0$</span>.</p><p class="math-container">\[\begin{aligned}
+\mu_{i, j} &amp;= a_i + b x_{i,j} \\
+y_{i,j} &amp;\sim \mathrm{Normal}(\mu_{i, j}, \sigma) \\
+a_i &amp;\sim \mathrm{Normal}(\mu_0, \sigma_0)
+\end{aligned}\]</p><p>Where <span>$i$</span> indexes the categories and <span>$j$</span> indexes the individual data points.</p><p>Choosing values for these parameters and simulating a dataset yields the following plot:</p><pre><code class="language-julia hljs">using MarginalLogDensities
+using Distributions
+using StatsPlots
+using Random
+
+Random.seed!(123)
+ncategories = 50
+points_per_category = 5
+categories = 1:ncategories
+μ0 = 5.0
+σ0 = 5.0
+aa = rand(Normal(μ0, σ0), ncategories)
+b = 4.5
+σ = 1.5
+category = repeat(categories, inner=points_per_category)
+n = length(category)
+x = rand(Uniform(-1, 1), n)
+μ = [aa[category[i]] + b * x[i] for i in 1:n]
+y = rand.(Normal.(μ, σ))
+
+scatter(x, y, color=category, legend=false, xlabel=&quot;x&quot;, ylabel=&quot;y&quot;)</code></pre><img src="608149f7.svg" alt="Example block output"/><p>Given this model structure, we can write a function for the log-likelihood of the data,  conditional on a vector of parameters <code>u</code>. The function is written so that <code>u</code> is  unbounded, that is, there are no constraints on any of its elements. This means it needs to include <code>exp</code> transformations for the elements of <code>u</code> corresponding to<code>σ0</code> and <code>σ</code> to make sure they end up non-negative inside the model.</p><pre><code class="language-julia hljs">function loglik(u, data)
+    # unpack the parameters
+    μ0 = u[1]
+    σ0 = exp(u[2])
+    σ = exp(u[3])
+    b = u[4]
+    aa = u[5:end]
+    # predict the data
+    μ = [aa[data.category[i]] + b * data.x[i] for i in 1:data.n]
+    # calculate and return the log-likelihood
+    return loglikelihood(Normal(μ0, σ0), aa) + sum(logpdf.(Normal.(μ, σ), data.y))
+end
+
+data = (; x, y, category, n)
+u0 = randn(4 + ncategories) # μ0, σ0, σ, b, and aa
+loglik(u0, data)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-76792.73966093425</code></pre><p>Say that we&#39;re not particularly interested in the individual intercepts <span>$a_i$</span>, but want to do inference on the other parameters. One way to approach this is to marginalize them</p><pre><code class="language-julia hljs"># select variables of interest out of complete parameter vector
+iv = 1:4
+v0 = u0[iv]
+
+# indices of nuisance parameters: everything esle
+iw = setdiff(eachindex(u0), iv)
+
+# construct a MarginalLogDensity
+mld = MarginalLogDensity(loglik, u0, iw, data)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">MarginalLogDensity of function Main.loglik
+Integrating 50/54 variables via LaplaceApprox</code></pre><p>We can then call <code>mld</code> like a function:</p><pre><code class="language-julia hljs">mld(v0)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-7352.673904149593</code></pre><p>And, using Optimization.jl, estimate the maximum marginal-likelihood values of our four parameters of interest:</p><pre><code class="language-julia hljs">using Optimization, OptimizationOptimJL
+
+opt_func = OptimizationFunction(mld)
+opt_prob = OptimizationProblem(opt_func, v0, data)
+opt_sol = solve(opt_prob, NelderMead())
+
+μ0_opt, logσ0_opt, logσ_opt, b_opt = opt_sol.u
+
+println(&quot;Estimated μ0:  $(round(μ0_opt, digits=2))  (true value $(μ0))&quot;)
+println(&quot;Estimated σ0:  $(round(exp(logσ0_opt), digits=2))  (true value $(σ0))&quot;)
+println(&quot;Estimated b:   $(round(b_opt, digits=2))  (true value $(b))&quot;)
+println(&quot;Estimated σ:   $(round(exp(logσ_opt), digits=2))   (true value $(σ))&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Estimated μ0:  4.46  (true value 5.0)
+Estimated σ0:  5.18  (true value 5.0)
+Estimated b:   3.78  (true value 4.5)
+Estimated σ:   1.8   (true value 1.5)</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../tips/">« Tips for success</a><a class="docs-footer-nextpage" href="../componentarrays/">Using ComponentArrays »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Tuesday 21 October 2025 01:23">Tuesday 21 October 2025</span>. Using Julia version 1.11.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

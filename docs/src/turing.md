@@ -46,7 +46,8 @@ plot(y)
 end
 
 full = demo(y)
-marginal = marginalize(full, [@varname(m)])
+marginal = marginalize(full, [@varname(m)], 
+    sparsity_detector=DenseSparsityDetector(AutoForwardDiff(), atol=1e-9))
 njoint(marginal)
 marginal([0.1, 1.0])
 
@@ -88,7 +89,9 @@ plot(y)
 end
 
 full = demo(y)
-marginal = marginalize(full, [@varname(m)])
+marginal = marginalize(full, [@varname(m)],
+    sparsity_detector=DenseSparsityDetector(AutoForwardDiff(), atol=1e-9))
+
 njoint(marginal)
 marginal([0.1, 1.0])
 ```

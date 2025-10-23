@@ -132,11 +132,11 @@ variables. If not specified, defaults to a sparse second-order method using forw
 over the AD type given in the `method` (`AutoForwardDiff()` is the default). 
 Other backends can be set by loading the appropriate AD package and using the ADTypes.jl 
 interface.
-- `sparsity_detector = DenseSparsityDetector(method.adtype, atol=cbrt(eps))` : How to
+- `sparsity_detector = TracerLocalSparsityDetector()` : How to
 perform the sparsity detection. Detecting sparsity takes some time and may not be worth it
-for small problems, but for larger problems it can be extremely worth it. The default 
-`DenseSparsityDetector` is most robust, but if it's too slow, or if you're running out of 
-memory on a larger problem, try the tracing-based dectectors from SparseConnectivityTracer.jl.
+for small problems, but for larger problems it can be extremely worth it. If the default 
+`TracerLocalSparsityDetector` encounters errors, you can try the slower but more robust
+`DenseSparsityDetector`. See the docs for SparseConnectivityTracer.jl for more details.
 - `coloring_algorithm = GreedyColoringAlgorithm()` : How to determine the matrix "colors"
 to compress the sparse Hessian.
 
